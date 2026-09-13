@@ -89,11 +89,13 @@ function WaitlistForm() {
 
 function ChatDemo() {
   const [messages, setMessages] = useState<Msg[]>([
-    { role: "orbit", text: "Boa tarde. Sou o Orbit — assistente do que virá. Pergunte o que quiser, sem cadastro." },
+    { role: "orbit", text: "Boa tarde. Sou o Orbit — assistente do que virá. Pergunte o que quiser, sem cadastro. Anexe a foto de um produto e eu monto o anúncio." },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [used, setUsed] = useState(0);
+  const [image, setImage] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -109,24 +111,42 @@ function ChatDemo() {
   async function send(e?: React.FormEvent) {
     e?.preventDefault();
     const text = input.trim();
-    if (!text || loading || blocked) return;
+    if ((!text && !image) || loading || blocked) return;
 
-    const history = messages
-      .filter((m) => m !== messages[0])
-      .map((m) => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] }));
-
-    setMessages((m) => [...m, { role: "user", text }]);
+    setMessages((m) => [
+      ...m,
+      { role: "user", text: image ? `${text || "anuncia esse"} 📎 [imagem anexada]` : text },
+    ]);
     setInput("");
     setLoading(true);
+    const sentImage = image;
+    setImage(null);
 
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history }),
-      });
-      const data = await res.json();
-      setMessages((m) => [...m, { role: "orbit", text: data.reply ?? data.error }]);
+      if (sentImage) {
+        const res = await fetch("/api/vision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageBase64: sentImage.split(",")[1],
+            mimeType: sentImage.slice(5, sentImage.indexOf(";")),
+            prompt: text || "Analise este produto e crie o anúncio.",
+          }),
+        });
+        const data = await res.json();
+        setMessages((m) => [...m, { role: "orbit", text: data.reply ?? data.error }]);
+      } else {
+        const history = messages
+          .filter((m) => m !== messages[0])
+          .map((m) => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] }));
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, history }),
+        });
+        const data = await res.json();
+        setMessages((m) => [...m, { role: "orbit", text: data.reply ?? data.error }]);
+      }
     } catch {
       setMessages((m) => [...m, { role: "orbit", text: "Falha de conexão. Tente novamente." }]);
     }
@@ -192,15 +212,52 @@ function ChatDemo() {
       {/* Input */}
       <form onSubmit={send} className="flex items-center gap-3 border-t border-zinc-200 px-4 py-3.5 dark:border-white/[0.06]">
         <input
+          ref={fileRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = () => setImage(reader.result as string);
+            reader.readAsDataURL(file);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          aria-label="Anexar imagem"
+          title="Anexar imagem do produto"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 text-zinc-400 transition hover:border-zinc-500 hover:text-zinc-900 dark:border-white/15 dark:text-zinc-500 dark:hover:border-white/30 dark:hover:text-white"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+          </svg>
+        </button>
+        {image && (
+          <div className="relative shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={image} alt="preview" className="h-9 w-9 rounded object-cover" />
+            <button
+              type="button"
+              onClick={() => setImage(null)}
+              className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-900 text-[9px] text-white dark:bg-white dark:text-black"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+        <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={blocked || loading}
-          placeholder={blocked ? "Disponível novamente amanhã." : "Escreva sua pergunta…"}
+          placeholder={blocked ? "Disponível novamente amanhã." : "Pergunte ou anexe a foto de um produto…"}
           className="flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400 disabled:opacity-40 dark:text-zinc-100 dark:placeholder:text-zinc-600"
         />
         <button
           type="submit"
-          disabled={blocked || loading || !input.trim()}
+          disabled={blocked || loading || (!input.trim() && !image)}
           aria-label="Enviar"
           className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-700 disabled:bg-zinc-300 dark:bg-white dark:text-black dark:hover:bg-zinc-200 dark:disabled:bg-white/10 dark:disabled:text-zinc-600"
         >
@@ -247,8 +304,8 @@ export default function Home() {
         </h1>
 
         <p className="fade-up d3 mx-auto mt-6 max-w-xl text-[15px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-          Pergunte agora, sem barreiras. Em breve, em um único chat:
-          <span className="text-zinc-800 dark:text-zinc-200"> ChatGPT · Gemini · Claude · Grok</span> — e um ecossistema completo ao redor.
+          Pergunte agora, sem barreiras. Anexe a foto de um produto e receba o anúncio pronto. Em breve:
+          <span className="text-zinc-800 dark:text-zinc-200"> ChatGPT · Gemini · Claude · Grok</span> em um único chat.
         </p>
 
         <div className="fade-up d4">
@@ -290,8 +347,6 @@ export default function Home() {
               }`}
             >
               <div className="flex items-center justify-between">
-                {/* Emoji minimalista: pequeno, sem cor e discreto.
-                    Quer colorido? Troque a classe para: text-lg */}
                 <span className="text-[15px] opacity-50 saturate-0 transition group-hover:opacity-90 dark:opacity-40 dark:group-hover:opacity-80">
                   {m.icon}
                 </span>
@@ -331,7 +386,7 @@ export default function Home() {
       <section className="mx-auto max-w-4xl px-6 py-24">
         <div className="grid gap-10 sm:grid-cols-3">
           {[
-            { fase: "I", titulo: "Agora", desc: "Prévia pública do assistente. Acesso antecipado aberto." },
+            { fase: "I", titulo: "Agora", desc: "Assistente com Modo Vendedor: foto do produto vira anúncio pronto." },
             { fase: "II", titulo: "Próximo", desc: "Orbit Core completo — todas as IAs, um só chat, grátis para os primeiros." },
             { fase: "III", titulo: "Ecossistema", desc: "Recall, Streamly, Echo e os demais módulos integrados ao núcleo." },
           ].map((s) => (
