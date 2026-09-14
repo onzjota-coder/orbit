@@ -204,6 +204,35 @@ export default function OrbitChat() {
     const text = input.trim();
     if ((!text && !image) || loading || blocked) return;
 
+    const imageRequest = text.match(
+      /^(?:faça|faca|gere|crie)\s+(?:uma\s+)?imagem\s+(?:de|do|da|dos|das)\s+(.+)$/i
+    );
+    if (imageRequest && !image) {
+      setMessages((m) => [...m, { role: "user", text }]);
+      setInput("");
+      setLoading(true);
+
+      try {
+        const res = await fetch("/api/text-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: imageRequest[1].trim() }),
+        });
+        const data = await res.json();
+        if (res.ok && data.imageDataUrl) {
+          setMessages((m) => [...m, { role: "orbit", text: "Imagem gerada:", image: data.imageDataUrl }]);
+        } else {
+          setMessages((m) => [...m, { role: "orbit", text: data.error ?? "Não consegui gerar a imagem agora." }]);
+        }
+      } catch {
+        setMessages((m) => [...m, { role: "orbit", text: "Falha de conexão ao gerar a imagem." }]);
+      }
+
+      setUsed(bumpUsage());
+      setLoading(false);
+      return;
+    }
+
     // ── FLUXO 1: existe produto pendente (ou foto original anterior) e o usuário escolheu o estilo ──
     if ((pendingProduct || lastOriginal) && text) {
       const choice = detectStyle(text);
