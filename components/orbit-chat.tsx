@@ -13,7 +13,7 @@ type Msg = { role: "user" | "orbit"; text: string; image?: string };
 // como histórico da IA nem reexibi-la quando há conversa salva.
 const WELCOME: Msg = {
   role: "orbit",
-  text: "Sou o Orbit. Anexe a foto de um produto para gerar imagem de vitrine e anúncio completo — ou pergunte o que quiser.",
+  text: "Olá! Eu sou o Orbit 🪐 — o navegador inteligente que une TUDO em um só lugar.\n\n💬 Converse e pergunte qualquer coisa\n🖼️ Anexe uma foto → imagem de vitrine para marketplace\n🛒 Monto anúncios completos (Mercado Livre, Shopee)\n📄 Gero documentos e textos estruturados\n🌐 Seus sites favoritos nas abas ao lado\n⚡ Execute fluxos que automatizam rotinas\n\nDica: digite /ajuda para ver os comandos 👇",
 };
 
 function getUsage(): number {
