@@ -12,6 +12,7 @@ type Tab = {
   title: string;
   type: TabType;
   url?: string;
+  ghost?: boolean; // MODO FANTASMA: nunca persistida
 };
 
 type Favorite = { title: string; url: string };
@@ -219,7 +220,17 @@ function FrameSpinner() {
 // ─────────────────────────────────────────────────────────────
 // MELHORIA 3 — iframe com spinner + timeout de 4s → fallback
 // ─────────────────────────────────────────────────────────────
-function GuardedFrame({ url, title, reloadKey }: { url: string; title: string; reloadKey: number }) {
+function GuardedFrame({
+  url,
+  title,
+  reloadKey,
+  ghost,
+}: {
+  url: string;
+  title: string;
+  reloadKey: number;
+  ghost?: boolean;
+}) {
   const [status, setStatus] = useState<"loading" | "ok" | "blocked">("loading");
 
   useEffect(() => {
@@ -241,7 +252,7 @@ function GuardedFrame({ url, title, reloadKey }: { url: string; title: string; r
         title={title}
         onLoad={() => setStatus("ok")}
         className="h-full w-full border-0"
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        sandbox={ghost ? "allow-scripts" : "allow-scripts allow-same-origin allow-forms allow-popups"}
         referrerPolicy="no-referrer"
       />
     </div>
@@ -311,6 +322,7 @@ export default function BrowserShell() {
   const [urlInput, setUrlInput] = useState("");
   const [histories, setHistories] = useState<Record<string, { stack: string[]; index: number }>>({});
   const [reloadKey, setReloadKey] = useState(0);
+  const [ghostMode, setGhostMode] = useState(false); // MODO FANTASMA: apenas state, NUNCA persistir
   const hydrated = useRef(false);
 
   // MELHORIA 1 — formulário inline de novo favorito
@@ -347,7 +359,8 @@ export default function BrowserShell() {
   useEffect(() => {
     if (!hydrated.current) return;
     try {
-      localStorage.setItem("orbit_tabs", JSON.stringify(tabs));
+      // Abas fantasma jamais são persistidas
+      localStorage.setItem("orbit_tabs", JSON.stringify(tabs.filter((t) => !t.ghost)));
     } catch {}
   }, [tabs]);
 
@@ -361,9 +374,14 @@ export default function BrowserShell() {
 
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   const activeHistory = activeTab ? histories[activeTab.id] : undefined;
-  const canBack = !!activeTab && activeTab.type === "iframe" && !!activeHistory && activeHistory.index > 0;
+  const canBack =
+    !!activeTab && activeTab.type === "iframe" && !activeTab.ghost && !!activeHistory && activeHistory.index > 0;
   const canForward =
-    !!activeTab && activeTab.type === "iframe" && !!activeHistory && activeHistory.index < activeHistory.stack.length - 1;
+    !!activeTab &&
+    activeTab.type === "iframe" &&
+    !activeTab.ghost &&
+    !!activeHistory &&
+    activeHistory.index < activeHistory.stack.length - 1;
 
   function updateTab(id: string, patch: Partial<Tab>) {
     setTabs((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
@@ -371,7 +389,7 @@ export default function BrowserShell() {
 
   function openYouTubeTab() {
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setTabs((ts) => [...ts, { id, title: "YouTube", type: "youtube" }]);
+    setTabs((ts) => [...ts, { id, title: "YouTube", type: "youtube", ...(ghostMode ? { ghost: true } : {}) }]);
     setActiveId(id);
   }
 
@@ -383,15 +401,26 @@ export default function BrowserShell() {
     }
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const embedUrl = toEmbeddableUrl(url);
-    setTabs((ts) => [...ts, { id, title, type: "iframe", url: embedUrl }]);
-    setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
+    // MODO FANTASMA: aba marcada como fantasma e histórico NÃO gravado
+    setTabs((ts) => [...ts, { id, title, type: "iframe", url: embedUrl, ...(ghostMode ? { ghost: true } : {}) }]);
+    if (!ghostMode) setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
     setActiveId(id);
   }
 
   function newTab() {
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setTabs((ts) => [...ts, { id, title: "Nova aba", type: "home" }]);
+    setTabs((ts) => [...ts, { id, title: "Nova aba", type: "home", ...(ghostMode ? { ghost: true } : {}) }]);
     setActiveId(id);
+  }
+
+  // MODO FANTASMA — liga/desliga. Ao desligar, TODAS as abas fantasma fecham automaticamente.
+  function toggleGhost() {
+    if (ghostMode) {
+      const activeIsGhost = tabs.find((t) => t.id === activeId)?.ghost ?? false;
+      setTabs((ts) => ts.filter((t) => !t.ghost));
+      if (activeIsGhost) setActiveId(ORBIT_TAB_ID);
+    }
+    setGhostMode((g) => !g);
   }
 
   function closeTab(id: string) {
@@ -415,6 +444,11 @@ export default function BrowserShell() {
   // Navegação dentro da própria aba (empilha no histórico interno)
   function navigateInTab(tabId: string, url: string, title: string) {
     const embedUrl = toEmbeddableUrl(url);
+    // MODO FANTASMA: navega SEM gravar histórico (voltar/avançar ficam desabilitados)
+    if (tabs.find((t) => t.id === tabId)?.ghost) {
+      updateTab(tabId, { type: "iframe", url: embedUrl, title });
+      return;
+    }
     updateTab(tabId, { type: "iframe", url: embedUrl, title });
     setHistories((h) => {
       const cur = h[tabId] ?? { stack: [], index: -1 };
@@ -508,7 +542,7 @@ export default function BrowserShell() {
     if (!url || isBlockedFrame(url)) {
       return <BlockedNotice url={url} />;
     }
-    return <GuardedFrame url={url} title={activeTab.title} reloadKey={reloadKey} />;
+    return <GuardedFrame url={url} title={activeTab.title} reloadKey={reloadKey} ghost={activeTab.ghost} />;
   }
 
   const iconBtn =
@@ -559,6 +593,25 @@ export default function BrowserShell() {
         >
           Acesso antecipado <span>→</span>
         </a>
+        {ghostMode && (
+          <span className="hidden shrink-0 items-center gap-1 rounded-full border border-[#7c3aed]/40 bg-[#7c3aed]/10 px-2.5 py-1 text-[11px] font-semibold text-[#a78bfa] sm:flex">
+            👻 Fantasma
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={toggleGhost}
+          aria-pressed={ghostMode}
+          aria-label="Modo Fantasma"
+          title="Modo Fantasma — nada fica salvo"
+          className={`${iconBtn} ${
+            ghostMode
+              ? "bg-[#7c3aed]/20 text-[#a78bfa] hover:bg-[#7c3aed]/30 hover:text-[#c4b5fd] dark:text-[#a78bfa]"
+              : ""
+          }`}
+        >
+          👻
+        </button>
         <ThemeToggle />
       </div>
 
@@ -672,6 +725,13 @@ export default function BrowserShell() {
           +
         </button>
       </div>
+
+      {/* MODO FANTASMA — banner no topo */}
+      {ghostMode && (
+        <div className="border-b border-[#7c3aed]/30 bg-[#7c3aed]/10 px-4 py-1.5 text-center text-[12.5px] font-medium text-[#a78bfa]">
+          👻 Modo Fantasma — nada fica salvo.
+        </div>
+      )}
 
       {/* Conteúdo da aba ativa */}
       <div className="min-h-0 flex-1 overflow-hidden">{renderContent()}</div>

@@ -4,8 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import Logo from "./logo";
 
 const DAILY_LIMIT = 10;
+const HISTORY_KEY = "orbit_chat_history";
+const HISTORY_MAX = 50;
 
 type Msg = { role: "user" | "orbit"; text: string; image?: string };
+
+// Boas-vindas como constante estável: usada para NÃO enviar a saudação
+// como histórico da IA nem reexibi-la quando há conversa salva.
+const WELCOME: Msg = {
+  role: "orbit",
+  text: "Sou o Orbit. Anexe a foto de um produto para gerar imagem de vitrine e anúncio completo — ou pergunte o que quiser.",
+};
 
 function getUsage(): number {
   if (typeof window === "undefined") return 0;
@@ -53,9 +62,9 @@ function composeOnBackground(pngDataUrl: string, bgColor: string): Promise<strin
 }
 
 export default function OrbitChat() {
-  const [messages, setMessages] = useState<Msg[]>([
-    { role: "orbit", text: "Sou o Orbit. Anexe a foto de um produto para gerar imagem de vitrine e anúncio completo — ou pergunte o que quiser." },
-  ]);
+  const [messages, setMessages] = useState<Msg[]>([WELCOME]);
+  // Só persiste depois de carregar o histórico salvo (evita sobrescrever com o estado inicial)
+  const [historyReady, setHistoryReady] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [used, setUsed] = useState(0);
@@ -74,6 +83,49 @@ export default function OrbitChat() {
   useEffect(() => {
     setUsed(getUsage());
   }, []);
+
+  // Tarefa 3.1 — ao montar, carrega o histórico salvo (o usuário volta e a conversa está lá)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Msg[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Tarefa 3.3 — histórico existe → substitui o estado (a boas-vindas não reaparece)
+          setMessages(parsed.slice(-HISTORY_MAX));
+        }
+      }
+    } catch {
+      // storage corrompido → segue com a conversa nova
+    }
+    setHistoryReady(true);
+  }, []);
+
+  // Tarefa 3.1 — persiste a cada mudança (máx 50 mensagens)
+  useEffect(() => {
+    if (!historyReady) return;
+    const trimmed = messages.slice(-HISTORY_MAX);
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
+    } catch {
+      // Cota cheia (imagens grandes em base64) → salva apenas o texto
+      try {
+        localStorage.setItem(
+          HISTORY_KEY,
+          JSON.stringify(trimmed.map((m) => ({ role: m.role, text: m.text })))
+        );
+      } catch {}
+    }
+  }, [messages, historyReady]);
+
+  // Tarefa 3.2 — limpa o histórico com confirmação
+  function clearHistory() {
+    if (!window.confirm("Limpar todo o histórico da conversa?")) return;
+    setMessages([WELCOME]);
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch {}
+  }
 
   useEffect(() => {
     boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight, behavior: "smooth" });
@@ -321,7 +373,7 @@ export default function OrbitChat() {
 
     try {
       const history = messages
-        .filter((m) => m !== messages[0])
+        .filter((m) => m !== WELCOME)
         .map((m) => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] }));
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -349,9 +401,20 @@ export default function OrbitChat() {
             ao vivo
           </span>
         </div>
-        <span className="text-[11px] tracking-wide text-zinc-400 dark:text-zinc-600">
-          {blocked ? "limite diário atingido" : `${DAILY_LIMIT - used} consultas restantes hoje`}
-        </span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={clearHistory}
+            aria-label="Limpar histórico"
+            title="Limpar histórico do chat"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-sm text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/[0.06] dark:hover:text-white"
+          >
+            🗑️
+          </button>
+          <span className="text-[11px] tracking-wide text-zinc-400 dark:text-zinc-600">
+            {blocked ? "limite diário atingido" : `${DAILY_LIMIT - used} consultas restantes hoje`}
+          </span>
+        </div>
       </div>
 
       {/* Mensagens */}
