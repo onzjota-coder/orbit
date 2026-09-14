@@ -23,7 +23,9 @@ Regras:
 - Se o pedido for genérico (ex.: "capacetes de motos"), escolha o modelo mais vendido como exemplo, entregue o formato completo e, ao final, pergunte se ele quer personalizar para um modelo específico ou enviar uma foto do produto.
 - Se faltarem informações (marca, tamanho, cor), entregue mesmo assim usando [colchetes] para o que falta e liste o que precisa completar.
 - Nunca invente pesquisa real. Só cite preços reais se estiverem no contexto.
-- Português do Brasil. Direto. Sem emojis.`;
+- Português do Brasil. Direto. Sem emojis.
+
+REGRA CRÍTICA DE PRODUTO: se a conversa anterior (history) contém a descrição de um produto fornecida pelo usuário ou identificada por análise de imagem (ex.: 'capacete Nolan preto fosco com viseira fumê'), use EXATAMENTE esse produto no anúncio — mesma marca, mesma cor, mesmas características. É PROIBIDO substituir por outro modelo 'mais vendido' ou genérico. Se faltar a marca, use [MARCA] como placeholder no título e pergunte ao final qual é a marca correta.`;
 
 async function callGemini(contents: object[]) {
   let lastError = "";
