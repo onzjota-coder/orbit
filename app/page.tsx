@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import BrowserShell from "@/components/browser-shell";
 import Logo from "@/components/logo";
 
@@ -17,49 +16,6 @@ const modules = [
   { n: "10", icon: "🔄", name: "SkillSwap", desc: "Troque conhecimento, não dinheiro." },
 ];
 
-function WaitlistForm() {
-  const [email, setEmail] = useState("");
-  const [done, setDone] = useState(false);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    try {
-      await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-    } catch {}
-    setDone(true);
-  }
-
-  if (done)
-    return (
-      <p className="mx-auto max-w-md border border-zinc-300 bg-zinc-50 px-6 py-4 text-center text-sm tracking-wide text-zinc-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-200">
-        Solicitação registrada. Você será contemplado no primeiro lote.
-      </p>
-    );
-
-  return (
-    <form onSubmit={submit} className="mx-auto flex w-full max-w-xl flex-col gap-2 sm:flex-row">
-      <input
-        type="email"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        placeholder="seu@email.com"
-        className="w-full flex-1 border border-zinc-300 bg-white px-5 py-3.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:border-white/30"
-      />
-      <button
-        type="submit"
-        className="bg-zinc-900 px-7 py-3.5 text-sm font-semibold tracking-wide text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-      >
-        Acesso antecipado
-      </button>
-    </form>
-  );
-}
-
 export default function Home() {
   return (
     <main className="relative">
@@ -68,17 +24,26 @@ export default function Home() {
       {/* SHELL — a página passa a SER o navegador (logo volta para a aba home) */}
       <BrowserShell />
 
-      {/* ACESSO */}
-      <section id="acesso" className="mx-auto max-w-3xl px-6 pt-24 text-center">
+      {/* ORBITMAIL */}
+      <section id="orbitmail" className="mx-auto max-w-3xl px-6 pt-24 text-center">
         <h2 className="font-display text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white sm:text-3xl">
-          Acesso antecipado
+          📧 OrbitMail — sua conta Orbit
         </h2>
         <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-zinc-500 dark:text-zinc-500">
-          O primeiro lote terá acesso completo e ilimitado, sem custo.
-          Cadastre-se para reservar sua posição.
+          O Orbit já é seu: grátis, sem cadastro. Em breve, com uma conta @orbitmail seus favoritos, abas, notas e
+          conversas sincronizam em todos os dispositivos.
         </p>
-        <div className="mt-8">
-          <WaitlistForm />
+        <div className="mt-8 flex flex-col items-center gap-3">
+          <button
+            type="button"
+            disabled
+            className="cursor-not-allowed rounded-none bg-zinc-900 px-7 py-3.5 text-sm font-semibold tracking-wide text-white opacity-50 dark:bg-white dark:text-black"
+          >
+            Quero meu @orbitmail
+          </button>
+          <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-[11px] font-semibold tracking-wide text-violet-600 dark:border-violet-400/30 dark:text-violet-400">
+            EM BREVE — Fase 2
+          </span>
         </div>
       </section>
 

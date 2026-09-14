@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import Logo from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 import OrbitChat from "./orbit-chat";
+import IntelligenceHub from "./intelligence-hub";
+import { BLOCKED_TRACKERS } from "@/lib/blocklist";
 
-type TabType = "home" | "iframe" | "orbit-chat" | "youtube";
+type TabType = "home" | "iframe" | "orbit-chat" | "youtube" | "youtube-search" | "inteligencias";
 
 type Tab = {
   id: string;
@@ -13,6 +15,7 @@ type Tab = {
   type: TabType;
   url?: string;
   ghost?: boolean; // MODO FANTASMA: nunca persistida
+  unverified?: boolean; // 🛡️ Tarefa 6: domínio suspeito que o usuário decidiu abrir mesmo assim
 };
 
 type Favorite = { title: string; url: string };
@@ -23,6 +26,10 @@ const HOME_TAB_ID = "home";
 // Playlist embed do YouTube permitida fora do iframe (youtube-nocookie)
 const YOUTUBE_PLAYLIST_EMBED =
   "https://www.youtube-nocookie.com/embed/videoseries?list=PLFgquLnL59amXB0-e43CUn39fhv7U3CGv";
+
+// Vídeo fixo de destaque — fallback quando a busca completa do YouTube
+// (embed listType=search, descontinuada pelo Google) não está disponível
+const YOUTUBE_FALLBACK_VIDEO = "https://www.youtube.com/embed/jfKfPfyJRdk";
 
 // Favoritos pré-instalados (persistidos em orbit_favorites; removíveis)
 const DEFAULT_FAVORITES: Favorite[] = [
@@ -45,8 +52,23 @@ const HOME_SHORTCUTS: Favorite[] = [
   { title: "WhatsApp Web", url: "https://web.whatsapp.com" },
 ];
 
-// Sites conhecidos que bloqueiam exibição em iframe → mensagem "abrir fora"
-const BLOCKED_FRAMES = ["netflix.com", "amazon.com", "google.com/search"];
+// Sites conhecidos que bloqueiam exibição em iframe (X-Frame-Options/CSP) →
+// mostramos a mensagem elegante "abrir fora" IMEDIATAMENTE (sem tela branca).
+// Correspondência por DOMÍNIO (host + caminho opcional) — nunca substring da URL.
+const FRAME_BLOCKERS: { host: string; path?: string }[] = [
+  { host: "netflix.com" },
+  { host: "amazon.com" },
+  { host: "amazon.com.br" },
+  { host: "google.com" },
+  { host: "mercadolivre.com.br" },
+  { host: "mercadolibre.com" },
+  { host: "shopee.com.br" },
+  { host: "instagram.com" },
+  { host: "whatsapp.com" },
+  { host: "facebook.com" },
+  { host: "x.com" },
+  { host: "twitter.com" },
+];
 
 function domainOf(url: string): string {
   try {
@@ -57,8 +79,77 @@ function domainOf(url: string): string {
 }
 
 function isBlockedFrame(url: string): boolean {
-  const lower = url.toLowerCase();
-  return BLOCKED_FRAMES.some((b) => lower.includes(b));
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, "");
+    return FRAME_BLOCKERS.some((b) => {
+      const hostMatch = host === b.host || host.endsWith(`.${b.host}`);
+      if (!hostMatch) return false;
+      if (b.path && !u.pathname.startsWith(b.path)) return false;
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAREFA 6 — Detector de golpes por DOMÍNIO (não por conhecimento de
+// produtos): o domínio usa o nome de uma marca oficial mas NÃO É o domínio
+// oficial → provável falsificação (caso real: página imitando a OpenAI
+// anunciou "GPT-6 Astra" com preço).
+// ─────────────────────────────────────────────────────────────
+const OFFICIAL_SITES: { domain: string; brand: string }[] = [
+  { domain: "openai.com", brand: "openai" },
+  { domain: "chatgpt.com", brand: "chatgpt" },
+  { domain: "google.com", brand: "google" },
+  { domain: "youtube.com", brand: "youtube" },
+  { domain: "mercadolivre.com.br", brand: "mercadolivre" },
+  { domain: "shopee.com.br", brand: "shopee" },
+  { domain: "amazon.com.br", brand: "amazon" },
+  { domain: "instagram.com", brand: "instagram" },
+  { domain: "whatsapp.com", brand: "whatsapp" },
+  { domain: "notion.so", brand: "notion" },
+  { domain: "z.ai", brand: "z.ai" },
+];
+
+// Domínios que CONTÊM nomes de marca mas são infraestrutura legítima
+const BRAND_EXEMPTS = [
+  "youtube-nocookie.com",
+  "ytimg.com",
+  "googleapis.com",
+  "googleusercontent.com",
+  "gstatic.com",
+];
+
+function suspiciousBrand(url: string): { brand: string; official: string } | null {
+  let host: string;
+  try {
+    host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return null;
+  }
+  if (BRAND_EXEMPTS.some((e) => host === e || host.endsWith(`.${e}`))) return null;
+  for (const s of OFFICIAL_SITES) {
+    const isOfficial = host === s.domain || host.endsWith(`.${s.domain}`);
+    if (isOfficial) return null;
+    if (host.includes(s.brand)) return { brand: s.brand, official: s.domain };
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAREFA 7 — Blocklist de trackers: se o destino da navegação for um
+// domínio rastreador, o Orbit recusa carregar (toast + contador).
+// ⚠️ Bloqueio por URL; sub-recursos exigem proxy — roadmap.
+// ─────────────────────────────────────────────────────────────
+function matchedTracker(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    return BLOCKED_TRACKERS.find((b) => host === b || host.endsWith(`.${b}`)) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function faviconFor(url: string): string {
@@ -68,6 +159,11 @@ function faviconFor(url: string): string {
 // Home do YouTube (sem vídeo específico) → página especial com buscador interno
 function isYouTubeHome(url: string): boolean {
   return /^https?:\/\/(www\.)?(youtube\.com\/?(\?.*)?|youtu\.be\/?)$/i.test(url.trim());
+}
+
+// URL especial orbit-yt-search:<termo> → aba de busca do YouTube dentro do shell
+function ytSearchTerm(url: string): string | null {
+  return url.startsWith("orbit-yt-search:") ? url.slice("orbit-yt-search:".length) : null;
 }
 
 // YouTube: converte URLs comuns em embeds que funcionam dentro do shell
@@ -83,14 +179,12 @@ function resolveUrlInput(raw: string): { url: string; title: string } | null {
   const input = raw.trim();
   if (!input) return null;
 
-  // "yt: termo" → busca oficial do YouTube em embed (funciona 100% no shell)
+  // "yt: termo" → busca do YouTube dentro do shell (o embed listType=search do
+  // Google foi descontinuado e falha → a aba mostra o fallback com vídeo fixo)
   if (input.toLowerCase().startsWith("yt:")) {
     const term = input.slice(3).trim();
     if (!term) return null;
-    return {
-      url: `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(term)}`,
-      title: `YouTube: ${term}`,
-    };
+    return { url: `orbit-yt-search:${term}`, title: `YouTube: ${term}` };
   }
 
   // URL completa ou domínio solto
@@ -152,7 +246,12 @@ function DynamicBackground() {
           <div
             key={i}
             className="absolute inset-0 bg-cover bg-center transition-opacity duration-[2000ms] ease-in-out"
-            style={{ backgroundImage: `url(${u})`, opacity: visible === i ? 1 : 0 }}
+            style={{
+              backgroundImage: `url(${u})`,
+              opacity: visible === i ? 1 : 0,
+              // Tarefa 8: nível Brave — imagem visível, porém sóbria em ambos os temas
+              filter: "brightness(0.85) saturate(1.1)",
+            }}
           />
         ) : null
       )}
@@ -162,18 +261,31 @@ function DynamicBackground() {
   );
 }
 
-function HomeGrid({ onOpen }: { onOpen: (url: string, title: string) => void }) {
+function HomeGrid({ onOpen, onIntelligence }: { onOpen: (url: string, title: string) => void; onIntelligence: () => void }) {
   return (
     <div className="relative h-full overflow-hidden">
       <DynamicBackground />
       <div className="scroll-slim relative z-10 flex h-full items-center justify-center overflow-y-auto p-8">
-        <div className="grid w-full max-w-3xl grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <div className="grid w-full max-w-3xl grid-cols-2 gap-6 justify-center sm:grid-cols-3 lg:grid-cols-4">
+          {/* Card em destaque — HUB DE INTELIGÊNCIAS (borda degradê violeta) */}
+          <div className="rounded-xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-violet-600 p-[1.5px] shadow-lg shadow-violet-500/25 transition hover:-translate-y-1">
+            <button
+              type="button"
+              onClick={onIntelligence}
+              className="flex h-[117px] w-[157px] flex-col items-center justify-center gap-2 rounded-[10.5px] bg-[#160a2b]/85 backdrop-blur-md transition hover:bg-[#1d0d3a]/85"
+            >
+              <span className="text-3xl">🧠</span>
+              <span className="bg-gradient-to-r from-violet-200 to-fuchsia-200 bg-clip-text text-[13px] font-semibold text-transparent">
+                Inteligências
+              </span>
+            </button>
+          </div>
           {HOME_SHORTCUTS.map((s) => (
             <button
               key={s.url}
               type="button"
               onClick={() => onOpen(s.url, s.title)}
-              className="group flex flex-col items-center gap-3 rounded-xl border border-white/20 bg-white/10 p-6 backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/40 hover:bg-white/20"
+              className="group flex h-[120px] w-[160px] flex-col items-center justify-center gap-3 rounded-xl border border-white/20 bg-white/10 backdrop-blur-md transition hover:-translate-y-1 hover:border-white/40 hover:bg-white/20 hover:shadow-lg hover:shadow-black/30"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={faviconFor(s.url)} alt="" className="h-10 w-10 rounded" />
@@ -218,7 +330,7 @@ function FrameSpinner() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MELHORIA 3 — iframe com spinner + timeout de 4s → fallback
+// MELHORIA 3 — iframe com spinner + timeout de 8s → fallback elegante
 // ─────────────────────────────────────────────────────────────
 function GuardedFrame({
   url,
@@ -235,9 +347,11 @@ function GuardedFrame({
 
   useEffect(() => {
     setStatus("loading");
+    // 8s: sites pesados (Shopee, Mercado Livre) demoram a sinalizar; só depois
+    // disso trocamos pela mensagem elegante de "abrir fora".
     const timer = window.setTimeout(() => {
       setStatus((s) => (s === "loading" ? "blocked" : s));
-    }, 4000);
+    }, 8000);
     return () => window.clearTimeout(timer);
   }, [url, reloadKey]);
 
@@ -252,7 +366,10 @@ function GuardedFrame({
         title={title}
         onLoad={() => setStatus("ok")}
         className="h-full w-full border-0"
-        sandbox={ghost ? "allow-scripts" : "allow-scripts allow-same-origin allow-forms allow-popups"}
+        // MODO FANTASMA: sandbox reforçado — nada de cookies, origem ou formulários
+        sandbox={ghost ? "allow-scripts" : undefined}
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
         referrerPolicy="no-referrer"
       />
     </div>
@@ -260,12 +377,12 @@ function GuardedFrame({
 }
 
 // ─────────────────────────────────────────────────────────────
-// MELHORIA 3 — Página especial do YouTube (buscador interno)
+// MELHORIA 3 — Página especial do YouTube (buscador + vídeos NO shell)
 // ─────────────────────────────────────────────────────────────
-function YouTubeHome({ onNavigate }: { onNavigate: (url: string, title: string) => void }) {
+function YouTubeHome({ onSearch, onPlaylist }: { onSearch: (term: string) => void; onPlaylist: () => void }) {
   const [term, setTerm] = useState("");
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-6 bg-[#0F0F0F] p-8">
+    <div className="scroll-slim flex h-full flex-col items-center gap-5 overflow-y-auto bg-[#0F0F0F] p-8">
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-14 items-center justify-center rounded-lg bg-red-600">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
@@ -280,10 +397,7 @@ function YouTubeHome({ onNavigate }: { onNavigate: (url: string, title: string) 
           e.preventDefault();
           const t = term.trim();
           if (!t) return;
-          onNavigate(
-            `https://www.youtube.com/embed?listType=search&list=${encodeURIComponent(t)}`,
-            `YouTube: ${t}`
-          );
+          onSearch(t);
         }}
         className="flex w-full max-w-xl gap-2"
       >
@@ -301,13 +415,61 @@ function YouTubeHome({ onNavigate }: { onNavigate: (url: string, title: string) 
         </button>
       </form>
 
-      <button
-        type="button"
-        onClick={() => onNavigate(YOUTUBE_PLAYLIST_EMBED, "YouTube: Playlist em destaque")}
-        className="text-sm text-zinc-400 underline decoration-zinc-600 underline-offset-4 transition hover:text-white"
-      >
-        Ou assista à playlist em destaque →
-      </button>
+      {/* Vídeos DENTRO do shell — playlist em destaque tocando direto aqui */}
+      <div className="w-full max-w-3xl">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <span className="text-[13px] font-medium text-zinc-300">▶ Tocando agora — playlist em destaque</span>
+          <button
+            type="button"
+            onClick={onPlaylist}
+            className="shrink-0 text-[12px] text-zinc-400 underline decoration-zinc-600 underline-offset-4 transition hover:text-white"
+          >
+            expandir →
+          </button>
+        </div>
+        <div className="overflow-hidden rounded-xl border border-white/10">
+          <iframe
+            src={YOUTUBE_PLAYLIST_EMBED}
+            title="Playlist em destaque"
+            className="aspect-video w-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            referrerPolicy="no-referrer"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Busca do YouTube: o embed listType=search foi descontinuado pelo Google e
+// falha sempre. Fallback honesto: vídeo fixo em destaque + nota ao usuário.
+// ─────────────────────────────────────────────────────────────
+function YouTubeSearchFallback({ term }: { term: string }) {
+  return (
+    <div className="scroll-slim flex h-full flex-col items-center gap-5 overflow-y-auto bg-[#0F0F0F] p-8">
+      <div className="flex items-center gap-3">
+        <span className="flex h-10 w-14 items-center justify-center rounded-lg bg-red-600">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        </span>
+        <span className="max-w-[320px] truncate text-xl font-semibold text-white">YouTube: {term}</span>
+      </div>
+      <p className="max-w-md text-center text-[13px] leading-relaxed text-zinc-400">
+        🔍 A busca completa está em breve. Enquanto isso, curta o vídeo em destaque:
+      </p>
+      <div className="w-full max-w-3xl overflow-hidden rounded-xl border border-white/10">
+        <iframe
+          src={YOUTUBE_FALLBACK_VIDEO}
+          title={`YouTube: ${term}`}
+          className="aspect-video w-full"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+          referrerPolicy="no-referrer"
+        />
+      </div>
     </div>
   );
 }
@@ -323,6 +485,24 @@ export default function BrowserShell() {
   const [histories, setHistories] = useState<Record<string, { stack: string[]; index: number }>>({});
   const [reloadKey, setReloadKey] = useState(0);
   const [ghostMode, setGhostMode] = useState(false); // MODO FANTASMA: apenas state, NUNCA persistir
+  // 🛡️ Tarefa 6 — aviso de golpe antes de abrir domínio suspeito
+  const [scamWarn, setScamWarn] = useState<{
+    url: string;
+    title: string;
+    mode: "open" | "navigate";
+    brand: string;
+    official: string;
+  } | null>(null);
+  // 🛡️ Tarefa 7 — contadores de bloqueio (por sessão) e toast
+  const [blockedCount, setBlockedCount] = useState(0);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Toast some sozinho após 3,5s
+  useEffect(() => {
+    if (!toast) return;
+    const t = window.setTimeout(() => setToast(null), 3500);
+    return () => window.clearTimeout(t);
+  }, [toast]);
   const hydrated = useRef(false);
 
   // MELHORIA 1 — formulário inline de novo favorito
@@ -393,8 +573,62 @@ export default function BrowserShell() {
     setActiveId(id);
   }
 
+  // Aba especial do HUB DE INTELIGÊNCIAS (id fixo → reabrir só a ativa)
+  function openIntelligenceTab() {
+    const existing = tabs.find((t) => t.type === "inteligencias");
+    if (existing) {
+      setActiveId(existing.id);
+      return;
+    }
+    setTabs((ts) => [...ts, { id: "inteligencias", title: "🧠 Inteligências", type: "inteligencias" }]);
+    setActiveId("inteligencias");
+  }
+
+  // 🛡️ Tarefa 6 — usuário decidiu continuar em domínio suspeito: abre com badge
+  function proceedScam() {
+    if (!scamWarn) return;
+    const w = scamWarn;
+    setScamWarn(null);
+    if (w.mode === "navigate" && activeTab && activeTab.type === "iframe") {
+      navigateInTab(activeTab.id, w.url, w.title);
+      updateTab(activeTab.id, { unverified: true });
+    } else {
+      openIframeTab(w.url, w.title);
+      // a aba recém-criada é a última do array
+      setTabs((ts) => ts.map((t, i) => (i === ts.length - 1 ? { ...t, unverified: true } : t)));
+    }
+  }
+
+  // 🛡️ Tarefa 7 — porta de entrada do blocklist: recusa tracker e conta
+  function blockTracker(url: string): boolean {
+    const tracker = matchedTracker(url);
+    if (!tracker) return false;
+    setBlockedCount((n) => n + 1);
+    setToast(`🛡️ Orbit bloqueou ${tracker}`);
+    return true;
+  }
+
   // Aba nova abre IMEDIATAMENTE com o título do site (spinner cobre o carregamento)
   function openIframeTab(url: string, title: string) {
+    // 🛡️ Tarefa 7: tracker → toast + contador, sem abrir a aba
+    if (blockTracker(url)) return;
+    // 🛡️ Tarefa 6: domínio usa nome de marca oficial sem ser o oficial → aviso antes
+    const scam = suspiciousBrand(url);
+    if (scam) {
+      setScamWarn({ url, title, mode: "open", brand: scam.brand, official: scam.official });
+      return;
+    }
+    // Busca do YouTube ("yt: termo") → aba especial com vídeo fixo + nota
+    const ytTerm = ytSearchTerm(url);
+    if (ytTerm) {
+      const ytId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setTabs((ts) => [
+        ...ts,
+        { id: ytId, title, type: "youtube-search", url: ytTerm, ...(ghostMode ? { ghost: true } : {}) },
+      ]);
+      setActiveId(ytId);
+      return;
+    }
     if (isYouTubeHome(url)) {
       openYouTubeTab();
       return;
@@ -443,6 +677,8 @@ export default function BrowserShell() {
 
   // Navegação dentro da própria aba (empilha no histórico interno)
   function navigateInTab(tabId: string, url: string, title: string) {
+    // 🛡️ Tarefa 7: tracker → toast + contador, sem navegar
+    if (blockTracker(url)) return;
     const embedUrl = toEmbeddableUrl(url);
     // MODO FANTASMA: navega SEM gravar histórico (voltar/avançar ficam desabilitados)
     if (tabs.find((t) => t.id === tabId)?.ghost) {
@@ -460,6 +696,22 @@ export default function BrowserShell() {
   // Navegação pelo campo de URL
   function navigate(url: string, title: string) {
     if (!activeTab) return;
+    // 🛡️ Tarefa 6: mesmo gate da aba nova, preservando o modo de navegação
+    const scam = suspiciousBrand(url);
+    if (scam) {
+      setScamWarn({ url, title, mode: activeTab.type === "iframe" ? "navigate" : "open", brand: scam.brand, official: scam.official });
+      return;
+    }
+    // Busca do YouTube ("yt: termo") → reutiliza a aba do YouTube quando possível
+    const ytTerm = ytSearchTerm(url);
+    if (ytTerm) {
+      if (activeTab.type === "youtube" || activeTab.type === "youtube-search") {
+        updateTab(activeTab.id, { type: "youtube-search", url: ytTerm, title });
+      } else {
+        openIframeTab(url, title);
+      }
+      return;
+    }
     if (isYouTubeHome(url)) {
       if (activeTab.type === "iframe" || activeTab.type === "youtube") {
         updateTab(activeTab.id, { type: "youtube", url: undefined, title: "YouTube" });
@@ -527,16 +779,32 @@ export default function BrowserShell() {
     if (!activeTab) return null;
     if (activeTab.type === "orbit-chat") {
       return (
-        <div className="scroll-slim h-full overflow-y-auto px-4 py-6">
+        <div className="h-full px-4 py-4">
           <OrbitChat />
         </div>
       );
     }
     if (activeTab.type === "home") {
-      return <HomeGrid onOpen={openIframeTab} />;
+      return <HomeGrid onOpen={openIframeTab} onIntelligence={openIntelligenceTab} />;
+    }
+    if (activeTab.type === "inteligencias") {
+      return (
+        <IntelligenceHub
+          onOpenOrbit={() => setActiveId(ORBIT_TAB_ID)}
+          onOpenSite={(url, title) => openIframeTab(url, title)}
+        />
+      );
     }
     if (activeTab.type === "youtube") {
-      return <YouTubeHome onNavigate={(url, title) => navigateInTab(activeTab.id, url, title)} />;
+      return (
+        <YouTubeHome
+          onSearch={(term) => navigate(`orbit-yt-search:${term}`, `YouTube: ${term}`)}
+          onPlaylist={() => navigateInTab(activeTab.id, YOUTUBE_PLAYLIST_EMBED, "YouTube: Playlist em destaque")}
+        />
+      );
+    }
+    if (activeTab.type === "youtube-search") {
+      return <YouTubeSearchFallback term={activeTab.url ?? ""} />;
     }
     const url = activeTab.url ?? "";
     if (!url || isBlockedFrame(url)) {
@@ -587,15 +855,15 @@ export default function BrowserShell() {
           />
         </form>
 
-        <a
-          href="#acesso"
-          className="hidden shrink-0 items-center gap-1.5 px-2 text-[13px] tracking-wide text-zinc-500 transition hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white sm:flex"
-        >
-          Acesso antecipado <span>→</span>
-        </a>
         {ghostMode && (
           <span className="hidden shrink-0 items-center gap-1 rounded-full border border-[#7c3aed]/40 bg-[#7c3aed]/10 px-2.5 py-1 text-[11px] font-semibold text-[#a78bfa] sm:flex">
             👻 Fantasma
+          </span>
+        )}
+        {/* 🛡️ Tarefa 7 — contador de bloqueios da sessão */}
+        {blockedCount > 0 && (
+          <span className="hidden shrink-0 items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 sm:flex dark:text-emerald-400">
+            🛡️ {blockedCount} bloqueados
           </span>
         )}
         <button
@@ -616,7 +884,7 @@ export default function BrowserShell() {
       </div>
 
       {/* Barra de favoritos (MELHORIA 1: gerenciáveis) */}
-      <div className="scroll-slim flex items-center gap-1 overflow-x-auto border-b border-zinc-200 px-3 py-1.5 dark:border-white/[0.06]">
+      <div className="scroll-slim flex items-center gap-4 overflow-x-auto border-b border-zinc-200 px-3 py-1.5 dark:border-white/[0.06]">
         {favorites.map((f) => (
           <div key={f.url} className="group relative flex shrink-0 items-center">
             <button
@@ -693,7 +961,7 @@ export default function BrowserShell() {
           return (
             <div
               key={t.id}
-              className={`group flex shrink-0 items-center gap-2 rounded-t-lg border border-b-0 px-3 py-2 text-[12.5px] transition ${
+              className={`group flex h-9 shrink-0 items-center gap-2 rounded-t-lg border border-b-0 px-3 text-[12.5px] transition ${
                 active
                   ? "border-zinc-200 bg-white text-zinc-900 dark:border-white/10 dark:bg-white/[0.06] dark:text-white"
                   : "border-transparent text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/[0.04]"
@@ -720,7 +988,7 @@ export default function BrowserShell() {
           onClick={newTab}
           aria-label="Nova aba"
           title="Nova aba"
-          className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
+          className="mb-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-lg leading-none text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
         >
           +
         </button>
@@ -733,8 +1001,55 @@ export default function BrowserShell() {
         </div>
       )}
 
+      {/* 🛡️ Tarefa 6 — badge da aba ativa em domínio não verificado */}
+      {activeTab?.unverified && (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-1 text-center text-[12px] font-medium text-amber-700 dark:text-amber-300">
+          🛡️ não verificado — confira sempre o endereço dentro do site aberto
+        </div>
+      )}
+
       {/* Conteúdo da aba ativa */}
       <div className="min-h-0 flex-1 overflow-hidden">{renderContent()}</div>
+
+      {/* 🛡️ Tarefa 7 — toast de bloqueio de tracker */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full border border-emerald-500/40 bg-[#0d1f16] px-5 py-2.5 text-[13px] font-semibold text-emerald-300 shadow-2xl">
+          {toast}
+        </div>
+      )}
+
+      {/* 🛡️ Tarefa 6 — modal de golpe por domínio */}
+      {scamWarn && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6">
+          <div className="w-full max-w-md rounded-xl border border-red-500/40 bg-white p-6 text-center shadow-2xl dark:border-red-400/30 dark:bg-[#141014]">
+            <p className="text-4xl">🛡️</p>
+            <p className="mt-3 text-[14.5px] font-semibold leading-relaxed text-zinc-900 dark:text-white">
+              ALERTA: este domínio pode se passar por marca oficial.
+            </p>
+            <p className="mt-2 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300">
+              O domínio <span className="font-mono font-semibold text-zinc-900 dark:text-white">{domainOf(scamWarn.url)}</span>{" "}
+              usa o nome <span className="font-semibold">“{scamWarn.brand}”</span> sem ser o site oficial (
+              <span className="font-mono">{scamWarn.official}</span>). Golpes comuns: produtos falsos e roubo de login.
+            </p>
+            <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={proceedScam}
+                className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              >
+                Continuar por minha conta
+              </button>
+              <button
+                type="button"
+                onClick={() => setScamWarn(null)}
+                className="rounded-lg border border-zinc-300 px-4 py-2 text-[13px] font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-white/15 dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+              >
+                Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
