@@ -2,5 +2,5 @@
   <g stroke="#ffffff" stroke-width="18" fill="none" stroke-linecap="round">
     <ellipse cx="256" cy="256" rx="170" ry="58" transform="rotate(-18 256 256)"/>
   </g>
-  <circle cx="256" cy="256" r="86" fill="#7c3aed" stroke="#ffffff" stroke-width="18"/>
+  <circle cx="256" cy="256" r="86" fill="#ffffff" stroke="#ffffff" stroke-width="18"/>
 </svg>

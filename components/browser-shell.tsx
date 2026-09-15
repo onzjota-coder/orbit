@@ -425,7 +425,7 @@ function DynamicBackgroundLegacy({ mode = "cosmos" }: { mode?: "cosmos" | "simpl
   }, []);
 
   return (
-    <div className={`absolute inset-0 ${mode === "simple" ? "bg-[#1E1B4B]" : ""}`}>
+    <div className={`absolute inset-0 ${mode === "simple" ? "bg-black" : ""}`}>
       {urls.map((u, i) =>
         u ? (
           <div
@@ -457,14 +457,14 @@ function HomeGrid({ onOpen, onIntelligence, username, history = [], background =
         {username && <p className="absolute left-6 top-6 text-sm font-medium text-white/80">{new Date().getHours() < 12 ? "Bom dia" : new Date().getHours() < 18 ? "Boa tarde" : "Boa noite"}, {username} 🌤️</p>}
         <div className="grid w-full max-w-3xl grid-cols-2 gap-6 justify-center sm:grid-cols-3 lg:grid-cols-4">
           {/* Card em destaque — HUB DE INTELIGÊNCIAS (borda degradê violeta) */}
-          <div className="min-h-[110px] rounded-3xl bg-gradient-to-br from-violet-500 via-fuchsia-500 to-violet-600 p-[1.5px] shadow-lg shadow-violet-500/25 transition hover:-translate-y-1">
+          <div className="min-h-[110px] rounded-3xl border border-white/20 bg-zinc-900 p-[1.5px] shadow-lg shadow-black/25 transition hover:-translate-y-1">
             <button
               type="button"
               onClick={onIntelligence}
-              className="flex h-[117px] w-[157px] flex-col items-center justify-center gap-2 rounded-[10.5px] bg-[#160a2b]/85 backdrop-blur-md transition hover:bg-[#1d0d3a]/85"
+              className="flex h-[117px] w-[157px] flex-col items-center justify-center gap-2 rounded-[10.5px] bg-black/85 backdrop-blur-md transition hover:bg-zinc-900/85"
             >
               <span className="text-3xl">🧠</span>
-              <span className="bg-gradient-to-r from-violet-200 to-fuchsia-200 bg-clip-text text-[13px] font-semibold text-transparent">
+              <span className="text-[13px] font-semibold text-white">
                 Inteligências
               </span>
             </button>
@@ -529,7 +529,7 @@ function ScamGateCard({
 }) {
   return (
     <div className="flex h-full items-center justify-center p-8">
-      <div className="max-w-md rounded-2xl border border-red-500/30 bg-white p-8 text-center shadow-xl shadow-red-500/10 dark:border-red-400/25 dark:bg-[#1E1B4B]">
+      <div className="max-w-md rounded-2xl border border-red-500/30 bg-white p-8 text-center shadow-xl shadow-red-500/10 dark:border-red-400/25 dark:bg-zinc-900">
         <p className="text-4xl">🛡️</p>
         <p className="mt-4 text-[15px] font-semibold leading-relaxed text-zinc-900 dark:text-white">
           Alerta de segurança
@@ -544,7 +544,7 @@ function ScamGateCard({
           <button
             type="button"
             onClick={onProceed}
-            className="rounded-full bg-gradient-to-r from-[#7C3AED] to-[#4F46E5] px-5 py-2 text-[13px] font-semibold text-white shadow-lg shadow-violet-600/30 transition hover:brightness-110"
+            className="rounded-full bg-white px-5 py-2 text-[13px] font-semibold text-black shadow-lg shadow-black/20 transition hover:bg-zinc-200"
           >
             Continuar por minha conta
           </button>
@@ -1406,21 +1406,21 @@ export default function BrowserShell() {
   }
 
   const iconBtn =
-    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-white";
+    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/[0.12] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent";
 
   if (splash) {
-    return <div className="flex h-screen w-full items-center justify-center bg-[#1E1B4B]"><div className="animate-spin"><Logo size={42} /></div></div>;
+    return <div className="flex h-screen w-full items-center justify-center bg-black"><div className="animate-spin"><Logo size={42} /></div></div>;
   }
 
   return (
     <section className="flex h-screen w-full flex-col overflow-hidden border-y border-zinc-200 bg-white dark:border-white/10 dark:bg-[#0E0E11]">
       {/* Barra superior estilo navegador */}
-      <div className="flex items-center gap-1.5 border-b border-zinc-200 px-3 py-2 dark:border-white/[0.06]">
+      <div className="flex items-center gap-1.5 border-b border-white/[0.12] bg-black px-3 py-2 text-white">
         <button
           type="button"
           onClick={goHome}
           title="Voltar ao início do Orbit"
-          className="flex shrink-0 items-center gap-2 rounded-lg px-2 py-1.5 text-zinc-900 transition hover:bg-zinc-100 dark:text-white dark:hover:bg-white/[0.06]"
+          className="flex shrink-0 items-center gap-2 rounded-lg px-2 py-1.5 text-white transition hover:bg-white/[0.12]"
         >
           <Logo size={18} />
           <span className="font-display text-[15px] font-semibold tracking-tight">Orbit</span>
@@ -1450,10 +1450,10 @@ export default function BrowserShell() {
             className="h-9 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-white/30"
           />
         </form>
-        {smartResult && <div className="absolute left-1/2 top-[54px] z-50 -translate-x-1/2 rounded-xl border border-violet-400/30 bg-white px-4 py-2 text-xs font-medium text-zinc-700 shadow-xl dark:bg-[#1E1B4B] dark:text-zinc-100">{smartResult} · Enter para usar</div>}
+        {smartResult && <div className="absolute left-1/2 top-[54px] z-50 -translate-x-1/2 rounded-xl border border-zinc-300 bg-white px-4 py-2 text-xs font-medium text-zinc-700 shadow-xl dark:border-white/20 dark:bg-zinc-900 dark:text-zinc-100">{smartResult} · Enter para usar</div>}
 
         {ghostMode && (
-          <span className="hidden shrink-0 items-center gap-1 rounded-full border border-[#7c3aed]/40 bg-[#7c3aed]/10 px-2.5 py-1 text-[11px] font-semibold text-[#a78bfa] sm:flex">
+          <span className="hidden shrink-0 items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 sm:flex">
             👻 Fantasma
           </span>
         )}
@@ -1471,7 +1471,7 @@ export default function BrowserShell() {
           title="Modo Fantasma — nada fica salvo"
           className={`${iconBtn} ${
             ghostMode
-              ? "bg-[#7c3aed]/20 text-[#a78bfa] hover:bg-[#7c3aed]/30 hover:text-[#c4b5fd] dark:text-[#a78bfa]"
+              ? "bg-white/15 text-white hover:bg-white/25"
               : ""
           }`}
         >
@@ -1490,7 +1490,7 @@ export default function BrowserShell() {
             <section><h3 className="mb-2 font-semibold">Favoritos</h3><button onClick={() => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(favorites, null, 2)], { type: "application/json" })); a.download = "orbit-favoritos.json"; a.click(); }} className="rounded border px-2 py-1">Exportar JSON</button><label className="ml-2 cursor-pointer rounded border px-2 py-1">Importar JSON<input type="file" accept="application/json" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; file.text().then((raw) => { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) setFavorites(parsed.filter((f): f is Favorite => typeof f?.title === "string" && typeof f?.url === "string")); }).catch(() => setToast("Arquivo de favoritos inválido")); }} /></label></section>
             <section><h3 className="mb-2 font-semibold">Privacidade</h3><button onClick={toggleGhost} className="rounded border px-2 py-1">{ghostMode ? "Desativar" : "Ativar"} Fantasma</button><p className="mt-2 text-zinc-500">{blockedCount} rastreadores bloqueados</p><button onClick={() => { if (window.confirm("Limpar dados do Orbit? Esta ação não pode ser desfeita.")) { if (window.confirm("Confirmar limpeza de histórico, abas e favoritos?")) { ["orbit_history", "orbit_chat_history", "orbit_tabs"].forEach((k) => localStorage.removeItem(k)); setUrlHistory([]); setTabs([{ id: ORBIT_TAB_ID, title: "Orbit", type: "orbit-chat" }]); } } }} className="mt-2 rounded border border-red-400 px-2 py-1 text-red-600">Limpar dados</button></section>
             <section><h3 className="mb-2 font-semibold">IA</h3><label><input type="checkbox" checked={settings.premium} onChange={(e) => setSettings((s) => ({ ...s, premium: e.target.checked }))} /> 💎 Imagem premium</label><p className="mt-2 text-zinc-500">Gemini ✓ · OpenRouter ⚪</p></section>
-            <section><h3 className="mb-2 font-semibold">Sobre</h3><p>Orbit 0.1.0 · feito no Brasil 🇧🇷</p><a className="text-violet-600 underline" href="https://github.com" target="_blank" rel="noreferrer">GitHub</a></section>
+            <section><h3 className="mb-2 font-semibold">Sobre</h3><p>Orbit 0.1.0 · feito no Brasil 🇧🇷</p><a className="text-zinc-900 underline dark:text-white" href="https://github.com" target="_blank" rel="noreferrer">GitHub</a></section>
           </div>
         </aside>
       )}
@@ -1608,7 +1608,7 @@ export default function BrowserShell() {
 
       {/* MODO FANTASMA — banner no topo */}
       {ghostMode && (
-        <div className="border-b border-[#7c3aed]/30 bg-[#7c3aed]/10 px-4 py-1.5 text-center text-[12.5px] font-medium text-[#a78bfa]">
+        <div className="border-b border-white/10 bg-zinc-900 px-4 py-1.5 text-center text-[12.5px] font-medium text-zinc-300">
           👻 Modo Fantasma — nada fica salvo.
         </div>
       )}

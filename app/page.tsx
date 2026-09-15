@@ -41,7 +41,7 @@ export default function Home() {
           >
             Quero meu @orbitmail
           </button>
-          <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-3 py-1 text-[11px] font-semibold tracking-wide text-violet-600 dark:border-violet-400/30 dark:text-violet-400">
+          <span className="rounded-full border border-zinc-300 bg-zinc-100 px-3 py-1 text-[11px] font-semibold tracking-wide text-zinc-700 dark:border-white/20 dark:bg-zinc-900 dark:text-zinc-300">
             EM BREVE — Fase 2
           </span>
         </div>
