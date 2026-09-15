@@ -19,11 +19,11 @@ const WELCOME: Msg = {
 
 // Chips de sugestão (Tarefa 9.2) — exibidos enquanto a conversa está no início
 const SUGGESTIONS: { label: string; fill: string }[] = [
-  { label: "📸 Anunciar produto", fill: "Quero anunciar um produto no Mercado Livre: " },
-  { label: "🎬 Fluxo UGC TikTok", fill: "Crie um roteiro de vídeo UGC para TikTok do meu produto: " },
-  { label: "📄 Criar documento", fill: "Crie um documento estruturado sobre " },
-  { label: "🎨 Gerar imagem", fill: "faça uma imagem de " },
-  { label: "💡 Me ensine algo", fill: "Me ensine algo interessante sobre " },
+  { label: "Anunciar produto", fill: "Quero anunciar um produto no Mercado Livre: " },
+  { label: "Fluxo UGC TikTok", fill: "Crie um roteiro de vídeo UGC para TikTok do meu produto: " },
+  { label: "Criar documento", fill: "Crie um documento estruturado sobre " },
+  { label: "Gerar imagem", fill: "faça uma imagem de " },
+  { label: "Me ensine algo", fill: "Me ensine algo interessante sobre " },
 ];
 
 function getUsage(): number {
@@ -389,15 +389,17 @@ export default function OrbitChat() {
 
     // ── FLUXO 0: geração de imagem por TEXTO ("faça/gere/crie/desenhe uma imagem/foto de X") ──
     const imgCmd = text.match(/^(fa[çc]a|gere|crie|desenhe)\s+(uma\s+|um\s+)?(imagem|foto)\s+/i);
-    if (imgCmd) {
-      const theme =
-        text
+    const directProductCmd = /^(quero|preciso|me mostre|mostre|crie|fa[çc]a)\s+(uma?\s+)?(camiseta|camisa|tenis|t[êe]nis|bone|b[óo]ne|colar|anel|brinco|capacete|cal[çc]a|shorts|moletom|vestido|saia|bolsa|mochila|relogio|rel[óo]gio|fone|celular|notebook)/i.test(text);
+    if ((imgCmd || directProductCmd) && !image) {
+      const theme = imgCmd
+        ? text
           .replace(/^(fa[çc]a|gere|crie|desenhe)\s+/i, "")
           .replace(/^(uma|um|o|a)\s+/i, "")
           .replace(/^(imagem|foto)\s+/i, "")
           .replace(/^(de|do|da|sobre|com)\s+/i, "")
           .replace(/^(uma|um|o|a)\s+/i, "")
-          .trim() || "algo surpreendente";
+          .trim() || "algo surpreendente"
+        : text;
       setMessages((m) => [...m, { role: "user", text }]);
       setInput("");
       setLoading(true);
@@ -414,7 +416,7 @@ export default function OrbitChat() {
           setMessages((m) => [
             ...m,
             ...(data.notice ? [{ role: "orbit" as const, text: data.notice }] : []),
-            { role: "orbit", text: `🎨 Aqui está sua imagem de ${theme}! (${label}) Clique nela para baixar.`, image: data.imageDataUrl },
+            { role: "orbit", text: directProductCmd ? "🎨 Aqui está! Quer variação? Diga o que mudar." : `🎨 Aqui está sua imagem de ${theme}! (${label}) Clique nela para baixar.`, image: data.imageDataUrl },
           ]);
         } else {
           setMessages((m) => [
@@ -433,7 +435,7 @@ export default function OrbitChat() {
 
     // ── FLUXO 1: existe produto pendente (ou foto original anterior) e o usuário escolheu o estilo ──
     if ((pendingProduct || lastOriginal) && text) {
-      const choice = detectStyle(text);
+      const choice = detectStyle(text) ?? "1";
       if (choice) {
         const labels: Record<string, string> = { "1": "fundo branco", "2": "fundo transparente", "3": "cenário profissional" };
         setMessages((m) => [...m, { role: "user", text }]);
@@ -483,7 +485,7 @@ export default function OrbitChat() {
             setMessages((m) => [
               ...m,
               { role: "orbit", text: choice === "1"
-                  ? "Fundo branco aplicado na SUA foto. Baixe clicando nela. Quer o anúncio completo (títulos, descrição, preço)?"
+                  ? "Fundo branco aplicado — diga 'transparente' ou 'cenário' para mudar."
                   : "Fundo removido (PNG transparente). Baixe clicando nela. Quer o anúncio completo (títulos, descrição, preço)?",
                 image: final },
             ]);
@@ -546,7 +548,46 @@ export default function OrbitChat() {
       setAwaitingDesc(false);
     }
 
-    // ── FLUXO 2: anexou imagem agora → analisa e pergunta o estilo ──
+    // FLUXO 2 revisado: a primeira vitrine é sempre entregue imediatamente.
+    if (image) {
+      setMessages((m) => [...m, { role: "user", text: `${text || "produto"} 📎 [imagem anexada]` }]);
+      setInput("");
+      setLoading(true);
+      const dataUrl = image;
+      setImage(null);
+      try {
+        let identified = "";
+        try {
+          const analysis = await analyzeAndAnnounce(dataUrl, "Que produto é este? Responda em uma frase curta.");
+          identified = (analysis.reply ?? "").trim();
+        } catch {
+          identified = "";
+        }
+        if (!identified || identified.length < 3 || /ocupada|indisponível/i.test(identified)) identified = stripStyle(text) || "produto";
+        const style = detectStyle(text) ?? "1";
+        setProductName(identified);
+        setAwaitingDesc(false);
+        setPendingProduct(dataUrl);
+        setLastOriginal(dataUrl);
+        if (style === "3") {
+          const showcase = await generateShowcase(dataUrl, "3", identified);
+          if (!showcase.imageDataUrl) throw new Error(showcase.error ?? "Falha ao gerar cenário");
+          setMessages((m) => [...m, { role: "orbit", text: "✅ Vitrine pronta com cenário! Baixe clicando. Quer fundo branco (diga '1') ou transparente (diga '2')?", image: showcase.imageDataUrl }]);
+        } else {
+          const transparent = await removeBgLocal(dataUrl);
+          const final = style === "2" ? transparent : await composeOnBackground(transparent, "#FFFFFF");
+          setMessages((m) => [...m, { role: "orbit", text: style === "2" ? "✅ Vitrine pronta com fundo transparente! Baixe clicando. Quer fundo branco (diga '1') ou cenário (diga '3')?" : "✅ Vitrine pronta com fundo branco! Baixe clicando. Quer fundo transparente (diga '2') ou cenário (diga '3')?", image: final }]);
+        }
+      } catch {
+        setMessages((m) => [...m, { role: "orbit", text: "Não consegui processar a foto agora. Tente novamente em instantes." }]);
+      } finally {
+        setUsed(bumpUsage());
+        setLoading(false);
+      }
+      return;
+    }
+
+    // ── FLUXO 2 legado (mantido como fallback de compatibilidade) ──
     if (image) {
       setMessages((m) => [...m, { role: "user", text: `${text || "produto"} 📎 [imagem anexada]` }]);
       setInput("");
@@ -773,7 +814,7 @@ export default function OrbitChat() {
                   setInput(s.fill);
                   inputRef.current?.focus();
                 }}
-                className="rounded-full border border-zinc-300 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 transition hover:-translate-y-0.5 hover:border-zinc-400 hover:text-zinc-900 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:border-white/30 dark:hover:text-white"
+                className="rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-[12px] font-medium text-zinc-600 transition hover:-translate-y-0.5 hover:border-violet-500 hover:text-violet-700 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300 dark:hover:border-violet-400 dark:hover:text-violet-300"
               >
                 {s.label}
               </button>

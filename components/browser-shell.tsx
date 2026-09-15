@@ -391,11 +391,11 @@ function resolveUrlInput(raw: string): { url: string; title: string; external?: 
 // MELHORIA 2 — Fundo dinâmico estilo Brave (crossfade a cada 30s)
 // ─────────────────────────────────────────────────────────────
 function cosmosBackground(n: number): string {
-  const shift = n % 2 ? "25% 30%" : "75% 25%";
-  return `radial-gradient(circle at ${shift}, #4C1D95 0%, transparent 42%), radial-gradient(circle at 75% 65%, #1E1B4B 0%, transparent 52%), linear-gradient(135deg, #172554, #1E1B4B)`;
+  void n;
+  return "#09090B";
 }
 
-function DynamicBackground({ mode = "cosmos" }: { mode?: "cosmos" | "simple" }) {
+function DynamicBackgroundLegacy({ mode = "cosmos" }: { mode?: "cosmos" | "simple" }) {
   const [urls, setUrls] = useState<[string, string | null]>([cosmosBackground(1), null]);
   const [visible, setVisible] = useState<0 | 1>(0);
   const visibleRef = useRef<0 | 1>(0);
@@ -435,7 +435,6 @@ function DynamicBackground({ mode = "cosmos" }: { mode?: "cosmos" | "simple" }) 
               backgroundImage: u,
               opacity: visible === i ? 1 : 0,
               // Tarefa 8: nível Brave — imagem visível, porém sóbria em ambos os temas
-              filter: "brightness(0.85) saturate(1.1)",
             }}
           />
         ) : null
@@ -446,10 +445,14 @@ function DynamicBackground({ mode = "cosmos" }: { mode?: "cosmos" | "simple" }) 
   );
 }
 
+function DynamicBackground() {
+  return <div className="absolute inset-0 bg-[#FAFAFA] dark:bg-[#09090B]" aria-hidden="true" />;
+}
+
 function HomeGrid({ onOpen, onIntelligence, username, history = [], background = "cosmos" }: { onOpen: (url: string, title: string) => void; onIntelligence: () => void; username?: string; history?: UrlHistoryItem[]; background?: "cosmos" | "simple" }) {
   return (
     <div className="relative h-full overflow-hidden">
-      <DynamicBackground mode={background} />
+      <DynamicBackground />
       <div className="scroll-slim relative z-10 flex h-full items-center justify-center overflow-y-auto p-8">
         {username && <p className="absolute left-6 top-6 text-sm font-medium text-white/80">{new Date().getHours() < 12 ? "Bom dia" : new Date().getHours() < 18 ? "Boa tarde" : "Boa noite"}, {username} 🌤️</p>}
         <div className="grid w-full max-w-3xl grid-cols-2 gap-6 justify-center sm:grid-cols-3 lg:grid-cols-4">
