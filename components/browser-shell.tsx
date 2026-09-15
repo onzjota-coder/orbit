@@ -67,22 +67,12 @@ function isYouTubeVideoUrl(url: string): boolean {
 
 // Vídeo fixo de destaque — fallback quando a busca completa do YouTube
 // (embed listType=search, descontinuada pelo Google) não está disponível
-const YOUTUBE_VIDEO_IDS = ["jfKfPfyJRdk", "5qap5aO4i9A", "21X5lGlDOfg", "DWcJFNfaw9c", "SqAlxegDhBo", "huoty9O6HQk"];
 const YOUTUBE_FALLBACK_VIDEO = "https://www.youtube.com/embed/jfKfPfyJRdk?playsinline=1&rel=0";
 
 function youtubeEmbedUrl(id: string, mode: "normal" | "nolads") {
   return mode === "nolads"
     ? `https://${Number.parseInt(id.slice(-1), 36) % 2 === 0 ? "pipe.yt" : "inv.nadeko.net"}/watch/${id}`
     : `https://www.youtube.com/embed/${id}?playsinline=1&rel=0`;
-}
-
-function YouTubeCard({ id, mode, onExperimental }: { id: string; mode: "normal" | "nolads"; onExperimental: () => void }) {
-  return (
-    <div className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
-      <iframe src={youtubeEmbedUrl(id, mode)} title={`YouTube ${id}`} className="aspect-video w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="no-referrer" />
-      {mode === "normal" && <button type="button" onClick={onExperimental} className="px-3 py-2 text-[11px] text-zinc-400 underline underline-offset-2 hover:text-white">Não funcionou?</button>}
-    </div>
-  );
 }
 
 // Favoritos pré-instalados (persistidos em orbit_favorites; removíveis)
@@ -636,15 +626,25 @@ function GuardedFrame({
 // ─────────────────────────────────────────────────────────────
 // MELHORIA 3 — Página especial do YouTube (buscador + vídeos NO shell)
 // ─────────────────────────────────────────────────────────────
-function YouTubeHome({ onSearch }: { onSearch: (term: string) => void }) {
+function YouTubeHome({ onSearch, onToast }: { onSearch: (term: string) => void; onToast: (message: string) => void }) {
   const [term, setTerm] = useState("");
   const [mode, setMode] = useState<"normal" | "nolads">("normal");
+  const [videoInput, setVideoInput] = useState("");
+  const [videoId, setVideoId] = useState<string | null>(null);
   useEffect(() => {
     try { setMode(localStorage.getItem("orbit_yt_mode") === "nolads" ? "nolads" : "normal"); } catch {}
   }, []);
   function toggleMode(next: "normal" | "nolads") {
     setMode(next);
     try { localStorage.setItem("orbit_yt_mode", next); } catch {}
+  }
+  function extractVideoId(value: string) {
+    try {
+      const url = new URL(value.trim());
+      return url.searchParams.get("v") || url.pathname.split("/").filter(Boolean).pop() || null;
+    } catch {
+      return null;
+    }
   }
   return (
     <div className="scroll-slim flex h-full flex-col items-center gap-5 overflow-y-auto bg-[#0F0F0F] p-8">
@@ -669,7 +669,7 @@ function YouTubeHome({ onSearch }: { onSearch: (term: string) => void }) {
         <input
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          placeholder="Buscar vídeos no YouTube…"
+          placeholder="Buscar vídeos no YouTube… (abre resultados reais)"
           className="h-11 min-w-0 flex-1 rounded-full border border-white/15 bg-white/[0.06] px-5 text-sm text-white outline-none transition placeholder:text-zinc-500 focus:border-white/40"
         />
         <button
@@ -683,18 +683,20 @@ function YouTubeHome({ onSearch }: { onSearch: (term: string) => void }) {
       {/* Vídeos DENTRO do shell — playlist em destaque tocando direto aqui */}
       <div className="w-full max-w-5xl">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="text-[13px] font-medium text-zinc-300">▶ Tocando agora — playlist em destaque</span>
+          <span className="text-[13px] font-medium text-zinc-300">Assistir um vídeo dentro do Orbit</span>
           <button
             type="button"
-            onClick={() => toggleMode(mode === "normal" ? "nolads" : "normal")}
+            onClick={() => { toggleMode("nolads"); window.open("https://piped.video/", "_blank", "noopener,noreferrer"); onToast("🧪 Frontend alternativo da comunidade — sem anúncios"); }}
             className="shrink-0 text-[12px] text-zinc-400 underline decoration-zinc-600 underline-offset-4 transition hover:text-white"
           >
             {mode === "normal" ? "🧪 Sem anúncios (experimental)" : "Voltar ao YouTube normal"}
           </button>
         </div>
-        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {YOUTUBE_VIDEO_IDS.map((id) => <YouTubeCard key={id} id={id} mode={mode} onExperimental={() => toggleMode("nolads")} />)}
-        </div>
+        <form onSubmit={(event) => { event.preventDefault(); const id = extractVideoId(videoInput); if (id) setVideoId(id); else onToast("Cole um link válido do YouTube (watch?v=...)"); }} className="mt-5 flex w-full max-w-2xl gap-2">
+          <input value={videoInput} onChange={(event) => setVideoInput(event.target.value)} placeholder="Cole um link do YouTube (watch?v=...)" className="h-11 min-w-0 flex-1 rounded-full border border-white/15 bg-white/[0.06] px-5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-white/40" />
+          <button type="submit" className="rounded-xl bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/20">Assistir</button>
+        </form>
+        {videoId ? <div className="mt-5 w-full max-w-3xl overflow-hidden rounded-3xl border border-white/10"><iframe key={`${videoId}-${mode}`} src={youtubeEmbedUrl(videoId, mode)} title="Vídeo do YouTube" className="aspect-video w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="no-referrer" onError={() => { if (mode === "nolads") { toggleMode("normal"); onToast("Frontend experimental indisponível; voltando ao YouTube normal."); } }} /></div> : <p className="mt-5 text-center text-xs text-zinc-500">💡 Dica: cole o link de qualquer vídeo para assistir dentro do Orbit. Buscas abrem no YouTube real.</p>}
         {mode === "nolads" && <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">🧪 Experimental — servidores da comunidade, podem ficar instáveis.</p>}
       </div>
     </div>
@@ -1293,6 +1295,7 @@ export default function BrowserShell() {
       return (
         <YouTubeHome
           onSearch={(term) => openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(term)}`, "🌐 Resultados abertos no YouTube")}
+          onToast={setToast}
         />
       );
     }

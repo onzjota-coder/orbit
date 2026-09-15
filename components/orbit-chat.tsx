@@ -7,13 +7,14 @@ import Logo from "./logo";
 const HISTORY_KEY = "orbit_chat_history";
 const HISTORY_MAX = 50;
 
-type Msg = { role: "user" | "orbit"; text: string; image?: string };
+type DocumentAttachment = { content: string; request: string };
+type Msg = { role: "user" | "orbit"; text: string; image?: string; document?: DocumentAttachment };
 
 // Boas-vindas como constante estável: usada para NÃO enviar a saudação
 // como histórico da IA nem reexibi-la quando há conversa salva.
 const WELCOME: Msg = {
   role: "orbit",
-  text: "Olá! Eu sou o Orbit 🪐 — o navegador inteligente que une TUDO em um só lugar.\n\n💬 Converse e pergunte qualquer coisa\n🎨 Pça: \"faça uma imagem de X\"\n🖼️ Anexe uma foto → imagem de vitrine para marketplace\n🛒 Monto anúncios completos (Mercado Livre, Shopee)\n📄 Gero documentos e textos estruturados\n🌐 Seus sites favoritos nas abas ao lado\n⚡ Execute fluxos que automatizam rotinas\n\nDica: digite /ajuda para ver os comandos 👇",
+  text: "Olá! Eu sou o Orbit 🪐 — o navegador inteligente que une TUDO em um só lugar. Como posso ajudar?",
 };
 
 // Chips de sugestão (Tarefa 9.2) — exibidos enquanto a conversa está no início
@@ -72,6 +73,44 @@ function downloadDocumentPdf(content: string, request: string) {
   pdf.setTextColor(0, 0, 0);
   const slug = request.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").slice(0, 48) || "documento";
   pdf.save(`orbit-${slug}.pdf`);
+}
+
+function documentSlug(request: string) {
+  return request.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").slice(0, 48) || "documento";
+}
+
+function documentHtml(content: string) {
+  const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
+  return content.split(/\r?\n/).map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return "<p>&nbsp;</p>";
+    if (/^#{1,2}\s|^[A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9][A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9 .:/-]{3,}$/.test(trimmed)) return `<h2>${escape(trimmed.replace(/^#+\s*/, ""))}</h2>`;
+    return `<p>${escape(line)}</p>`;
+  }).join("\n");
+}
+
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadDocumentDocx(content: string, request: string) {
+  const htmlContent = documentHtml(content);
+  const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:'Times New Roman';font-size:12pt}h2{font-size:16pt}p{margin:0 0 10pt}</style></head><body>${htmlContent}</body></html>`;
+  triggerDownload(new Blob([html], { type: "application/msword" }), `orbit-${documentSlug(request)}.doc`);
+}
+
+function downloadDocumentTxt(content: string, request: string) {
+  triggerDownload(new Blob([content], { type: "text/plain;charset=utf-8" }), `orbit-${documentSlug(request)}.txt`);
+}
+
+function downloadDocumentHtml(content: string, request: string) {
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${documentSlug(request)}</title><style>body{max-width:780px;margin:40px auto;font-family:system-ui;color:#18181b;line-height:1.6}h2{color:#4f46e5}p{white-space:pre-wrap}</style></head><body>${documentHtml(content)}</body></html>`;
+  triggerDownload(new Blob([html], { type: "text/html;charset=utf-8" }), `orbit-${documentSlug(request)}.html`);
 }
 
 async function removeBgLocal(dataUrl: string): Promise<string> {
@@ -315,6 +354,10 @@ export default function OrbitChat() {
 
     const docTrigger = /(curr[ií]culo|declarac[aã]o|relat[óo]rio|contrato|recibo|certid[ãa]o|or[çc]amento|cronograma)/i;
     const wantsFile = /(pdf|word|arquivo|documento|gerar|crie|fa[çc]a|monte|envie)/i;
+    const wantsWord = /\b(word|docx|doc)\b/i.test(text);
+    const wantsHtml = /\bhtml\b/i.test(text);
+    const wantsTxt = /\b(txt|texto simples)\b/i.test(text);
+    const wantsPdf = /\bpdf\b/i.test(text) || (!wantsWord && !wantsHtml && !wantsTxt);
     if (docTrigger.test(text) && wantsFile.test(text)) {
       setMessages((m) => [...m, { role: "user", text }, { role: "orbit", text: "📝 Gerando seu documento..." }]);
       setInput("");
@@ -327,8 +370,11 @@ export default function OrbitChat() {
         });
         const data = await res.json();
         if (typeof data.reply === "string" && data.reply.trim().length >= 50) {
-          downloadDocumentPdf(data.reply, text);
-          setMessages((m) => [...m, { role: "orbit", text: "✅ PDF baixado! Confira Downloads. Diga 'regenere' com as mudanças." }]);
+          if (wantsWord) downloadDocumentDocx(data.reply, text);
+          else if (wantsHtml) downloadDocumentHtml(data.reply, text);
+          else if (wantsTxt) downloadDocumentTxt(data.reply, text);
+          else if (wantsPdf) downloadDocumentPdf(data.reply, text);
+          setMessages((m) => [...m, { role: "orbit", text: "✅ Documento pronto! Baixe no formato que quiser:", document: { content: data.reply, request: text } }]);
         } else {
           setMessages((m) => [...m, { role: "orbit", text: data.error ?? "Não consegui gerar o documento agora. Tente novamente." }]);
         }
@@ -684,6 +730,14 @@ export default function OrbitChat() {
                   {m.text && (
                     <div className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-zinc-700 dark:text-zinc-300">
                       {m.text}
+                    </div>
+                  )}
+                  {m.document && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => downloadDocumentPdf(m.document!.content, m.document!.request)} className="rounded-xl bg-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500">PDF</button>
+                      <button type="button" onClick={() => downloadDocumentDocx(m.document!.content, m.document!.request)} className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15">Word</button>
+                      <button type="button" onClick={() => downloadDocumentHtml(m.document!.content, m.document!.request)} className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15">HTML</button>
+                      <button type="button" onClick={() => downloadDocumentTxt(m.document!.content, m.document!.request)} className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15">TXT</button>
                     </div>
                   )}
                   {/* Tarefa 9.1 — copiar resposta (✓ por 1,5s) */}
