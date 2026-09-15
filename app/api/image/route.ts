@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+// Negative prompt automático — anatomia, texto e qualidade (mesmo padrão de /api/text-image)
+const NEGATIVE =
+  "evite: mãos deformadas, dedos extras, membros extras, texto borrado, marca d'água, watermark, assinatura, low quality, blurry, deformed hands, extra fingers, distorted anatomy, jpeg artifacts";
+
 // ─────────────────────────────────────────────────────────────
 // RODÍZIO DE CHAVES (embutido)
 // Suporta: GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3
@@ -129,11 +133,12 @@ async function tryGemini(imageBase64: string, mimeType: string, styleText: strin
 async function tryPollinations(productHint: string, styleText: string): Promise<string | null> {
   let prompt = productHint && productHint.trim().length > 3 ? productHint.trim() : "";
   if (!prompt) prompt = "professional product photography";
-  prompt = `${prompt}, ${styleText}`;
+  // Negative prompt automático — mesmo padrão da rota text-image
+  prompt = `${prompt}, ${styleText}. ${NEGATIVE}`;
 
   console.log("🎨 Pollinations prompt:", prompt);
 
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&model=flux&nologo=true&seed=${Math.floor(Math.random() * 1000000)}`;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=1024&model=flux&nologo=true&enhance=true&seed=${Math.floor(Math.random() * 1000000)}`;
 
   const res = await fetch(url, { method: "GET" });
 

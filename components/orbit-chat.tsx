@@ -726,7 +726,8 @@ export default function OrbitChat() {
                 💎 Qualidade de imagem — Usar API OpenAI (sua chave)
               </p>
               <p className="text-[11.5px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                Precisa de OPENAI_API_KEY no servidor. Sem ela, caímos no gerador gratuito.
+                Com OPENAI_API_KEY no servidor, GPT-Image é o motor padrão das imagens. Sem ela, usamos o gerador
+                gratuito.
               </p>
             </div>
             <button

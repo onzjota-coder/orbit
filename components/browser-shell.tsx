@@ -1344,12 +1344,7 @@ export default function BrowserShell() {
       return <HomeGrid onOpen={openIframeTab} onIntelligence={openIntelligenceTab} username={settings.username} history={urlHistory} background={settings.background} />;
     }
     if (activeTab.type === "inteligencias") {
-      return (
-        <IntelligenceHub
-          onOpenOrbit={() => setActiveId(ORBIT_TAB_ID)}
-          onOpenSite={(url, title) => openIframeTab(url, title)}
-        />
-      );
+      return <IntelligenceHub onOpenOrbit={() => setActiveId(ORBIT_TAB_ID)} />;
     }
     if (activeTab.type === "youtube") {
       return (

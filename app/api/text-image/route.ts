@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 
 // ─────────────────────────────────────────────────────────────
-// Geração de imagem por TEXTO — Pollinations (FLUX) direto.
-// SEM depender de Gemini: sempre disponível, zero cota de API paga.
+// Geração de imagem por TEXTO — padrão: Pollinations (FLUX) grátis.
+// Com OPENAI_API_KEY no servidor (BYOK), GPT-Image vira o motor padrão.
 // ─────────────────────────────────────────────────────────────
+
+// Negative prompt automático — anatomia, texto e qualidade (aplicado a todos os motores)
+const NEGATIVE =
+  "evite: mãos deformadas, dedos extras, membros extras, texto borrado, marca d'água, watermark, assinatura, low quality, blurry, deformed hands, extra fingers, distorted anatomy, jpeg artifacts";
+
 export async function POST(req: Request) {
   try {
     const { prompt, premium } = await req.json();
@@ -15,18 +20,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Descrição muito longa (máx. 500 caracteres)." }, { status: 400 });
     }
 
-    const fullPrompt = `${prompt.trim()}, high quality, detailed`;
+    const fullPrompt = `${prompt.trim()}, high quality, detailed. ${NEGATIVE}`;
 
     // ─────────────────────────────────────────────────────────
-    // BYOK — Bring Your Own Key (arquitetura premium opcional)
-    // Configure no .env.local (OPCIONAL — o gerador gratuito segue como padrão):
+    // BYOK — Bring Your Own Key. Configure no .env.local (OPCIONAL):
     //   OPENAI_API_KEY=sk-...   (chave do usuário da OpenAI → 💎 GPT-Image)
+    // Com a chave presente, GPT-Image é o MOTOR PADRÃO; se falhar
+    // (401/429/rede), cai para o Pollinations gratuito com retry.
     // ─────────────────────────────────────────────────────────
     const openaiKey = process.env.OPENAI_API_KEY;
+    const wantOpenai = typeof openaiKey === "string" && openaiKey.length > 10;
     let notice: string | undefined;
 
-    // PRIORIDADE 1: OpenAI (só quando o usuário ativou premium E a chave existe no servidor)
-    if (premium === true && openaiKey && openaiKey.length > 10) {
+    // PRIORIDADE 1: GPT-Image (motor padrão quando o servidor tem a chave)
+    if (wantOpenai) {
       console.log("[ORBIT-IMG] provedor=openai");
       try {
         const res = await fetch("https://api.openai.com/v1/images/generations", {
@@ -35,7 +42,7 @@ export async function POST(req: Request) {
             Authorization: `Bearer ${openaiKey}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ model: "gpt-image-1", prompt: fullPrompt, size: "1024x1024", n: 1 }),
+          body: JSON.stringify({ model: "gpt-image-1", prompt: fullPrompt, size: "1024x1024", n: 1, quality: "high" }),
           signal: AbortSignal.timeout(120_000),
         });
 
@@ -59,14 +66,14 @@ export async function POST(req: Request) {
       console.log("[ORBIT-IMG] premium pedido, mas sem OPENAI_API_KEY no servidor → Pollinations");
     }
 
-    // PRIORIDADE 2 (padrão/grátis): Pollinations com retry
+    // PRIORIDADE 2 (grátis/ fallback): Pollinations com retry
     console.log("[ORBIT-IMG] provedor=pollinations");
 
     // RETRY: 3 tentativas — o Pollinations é instável
     for (let attempt = 1; attempt <= 3; attempt++) {
       console.log(`🖼️ Pollinations tentativa ${attempt}/3`);
       const res = await fetch(
-        `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1024&height=1024&model=flux&nologo=true&seed=${Math.floor(
+        `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1024&height=1024&model=flux&nologo=true&enhance=true&seed=${Math.floor(
           Math.random() * 1000000
         )}`,
         { method: "GET", signal: AbortSignal.timeout(90_000) }
