@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import Logo from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 import OrbitChat from "./orbit-chat";
@@ -30,7 +31,7 @@ type Tab = {
   scamDismissed?: boolean;
 };
 
-type Favorite = { title: string; url: string };
+type Favorite = { title: string; url: string; folder?: string };
 
 // TAREFA 20 — atalhos da home com anel (ring) da cor da marca
 type HomeShortcut = Favorite & { ring: string; shadow: string };
@@ -109,6 +110,16 @@ const FRAME_BLOCKERS: { host: string; path?: string }[] = [
   { host: "facebook.com" },
   { host: "x.com" },
   { host: "twitter.com" },
+  { host: "chatgpt.com" },
+  { host: "chat.z.ai" },
+  { host: "z.ai" },
+  { host: "gemini.google.com" },
+  { host: "claude.ai" },
+  { host: "chat.deepseek.com" },
+  { host: "openai.com" },
+  { host: "linkedin.com" },
+  { host: "discord.com" },
+  { host: "tiktok.com" },
 ];
 
 function domainOf(url: string): string {
@@ -346,12 +357,13 @@ function resolveUrlInput(raw: string): { url: string; title: string; external?: 
 // ─────────────────────────────────────────────────────────────
 // MELHORIA 2 — Fundo dinâmico estilo Brave (crossfade a cada 30s)
 // ─────────────────────────────────────────────────────────────
-function picsumUrl(n: number): string {
-  return `https://picsum.photos/1920/1080?random=${n}`;
+function cosmosBackground(n: number): string {
+  const shift = n % 2 ? "25% 30%" : "75% 25%";
+  return `radial-gradient(circle at ${shift}, #4C1D95 0%, transparent 42%), radial-gradient(circle at 75% 65%, #1E1B4B 0%, transparent 52%), linear-gradient(135deg, #172554, #1E1B4B)`;
 }
 
 function DynamicBackground() {
-  const [urls, setUrls] = useState<[string, string | null]>([picsumUrl(1), null]);
+  const [urls, setUrls] = useState<[string, string | null]>([cosmosBackground(1), null]);
   const [visible, setVisible] = useState<0 | 1>(0);
   const visibleRef = useRef<0 | 1>(0);
   const counter = useRef(1);
@@ -361,10 +373,9 @@ function DynamicBackground() {
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
 
     const id = window.setInterval(() => {
-      const nextUrl = picsumUrl(++counter.current);
+      const nextUrl = cosmosBackground(++counter.current);
       // Pré-carrega a próxima imagem antes de trocar (evita flash)
-      const img = new Image();
-      img.onload = () => {
+      {
         const hidden: 0 | 1 = visibleRef.current === 0 ? 1 : 0;
         setUrls((prev) => {
           const copy: [string, string | null] = [prev[0], prev[1]];
@@ -375,8 +386,7 @@ function DynamicBackground() {
           visibleRef.current = hidden;
           setVisible(hidden);
         });
-      };
-      img.src = nextUrl;
+      }
     }, 30000);
     return () => window.clearInterval(id);
   }, []);
@@ -389,7 +399,7 @@ function DynamicBackground() {
             key={i}
             className="absolute inset-0 bg-cover bg-center transition-opacity duration-[2000ms] ease-in-out"
             style={{
-              backgroundImage: `url(${u})`,
+              backgroundImage: u,
               opacity: visible === i ? 1 : 0,
               // Tarefa 8: nível Brave — imagem visível, porém sóbria em ambos os temas
               filter: "brightness(0.85) saturate(1.1)",
@@ -566,6 +576,7 @@ function GuardedFrame({
         src={url}
         title={title}
         onLoad={() => setStatus("ok")}
+        onError={() => setStatus("blocked")}
         className="h-full w-full border-0"
         // MODO FANTASMA: sandbox reforçado — nada de cookies, origem ou formulários
         sandbox={ghost ? "allow-scripts" : undefined}
@@ -676,6 +687,7 @@ function YouTubeSearchFallback({ term }: { term: string }) {
 }
 
 export default function BrowserShell() {
+  const { setTheme } = useTheme();
   const [tabs, setTabs] = useState<Tab[]>([
     { id: ORBIT_TAB_ID, title: "Orbit", type: "orbit-chat" },
     { id: HOME_TAB_ID, title: "Início", type: "home" },
@@ -717,6 +729,10 @@ export default function BrowserShell() {
   const [showFavForm, setShowFavForm] = useState(false);
   const [favName, setFavName] = useState("");
   const [favUrl, setFavUrl] = useState("");
+  const [favFolder, setFavFolder] = useState("Geral");
+  const [activeFolder, setActiveFolder] = useState("Todos");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState({ homepage: "home", locale: "pt-BR", premium: false });
 
   // Carrega abas e favoritos salvos no localStorage
   useEffect(() => {
@@ -764,6 +780,8 @@ export default function BrowserShell() {
   useEffect(() => {
     try {
       setSidebarOpen(localStorage.getItem(SIDEBAR_KEY) === "true");
+      const savedSettings = localStorage.getItem("orbit_settings");
+      if (savedSettings) setSettings((current) => ({ ...current, ...JSON.parse(savedSettings) }));
     } catch {}
     setUrlHistory(readUrlHistory());
   }, []);
@@ -774,6 +792,14 @@ export default function BrowserShell() {
       localStorage.setItem(SIDEBAR_KEY, String(sidebarOpen));
     } catch {}
   }, [sidebarOpen]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("orbit_settings", JSON.stringify(settings));
+      localStorage.setItem("orbit_premium_image", String(settings.premium));
+      localStorage.setItem("orbit_locale", settings.locale);
+    } catch {}
+  }, [settings]);
 
   // TAREFA 6 — guarda a aba anterior para o Ctrl+Tab
   useEffect(() => {
@@ -910,7 +936,7 @@ export default function BrowserShell() {
     // TAREFA 1 — sites que bloqueiam iframe (google, instagram, ML…) abrem
     // DIRETO em nova aba do sistema: nunca cadeado para sites comuns
     if (isBlockedFrame(url)) {
-      openExternal(url, `${title || domainOf(url)} aberta em nova aba`);
+      openExternal(url, `🌐 ${title || domainOf(url)} aberto em nova aba — sua conta, nossa janela`);
       return;
     }
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -1112,7 +1138,7 @@ export default function BrowserShell() {
     if (!rawUrl) return;
     const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
     const title = favName.trim() || domainOf(url);
-    setFavorites((fs) => (fs.some((f) => f.url === url) ? fs : [...fs, { title, url }]));
+    setFavorites((fs) => (fs.some((f) => f.url === url) ? fs : [...fs, { title, url, folder: favFolder || "Geral" }]));
     setFavName("");
     setFavUrl("");
     setShowFavForm(false);
@@ -1263,6 +1289,8 @@ export default function BrowserShell() {
 
   const iconBtn =
     "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-30 disabled:hover:bg-transparent dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-white";
+  const folders = ["Todos", ...Array.from(new Set(favorites.map((f) => f.folder || "Geral")))];
+  const visibleFavorites = activeFolder === "Todos" ? favorites : favorites.filter((f) => (f.folder || "Geral") === activeFolder);
 
   return (
     <section className="flex h-screen w-full flex-col overflow-hidden border-y border-zinc-200 bg-white dark:border-white/10 dark:bg-[#0E0E11]">
@@ -1329,11 +1357,26 @@ export default function BrowserShell() {
           👻
         </button>
         <ThemeToggle />
+        <button type="button" onClick={() => setSettingsOpen(true)} aria-label="Configurações" title="Configurações" className={iconBtn}>☰</button>
       </div>
+
+      {settingsOpen && (
+        <aside className="absolute inset-y-0 left-0 z-[80] w-80 overflow-y-auto border-r border-zinc-200 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#0E0E11]">
+          <div className="mb-5 flex items-center justify-between"><h2 className="font-semibold">☰ Configurações</h2><button type="button" onClick={() => setSettingsOpen(false)} className={iconBtn}>×</button></div>
+          <div className="space-y-5 text-sm">
+            <section><h3 className="mb-2 font-semibold">Geral</h3><div className="flex gap-2"><button onClick={() => setTheme("light")} className="rounded border px-2 py-1">Claro</button><button onClick={() => setTheme("dark")} className="rounded border px-2 py-1">Escuro</button><button onClick={() => setTheme("system")} className="rounded border px-2 py-1">Sistema</button></div><label className="mt-2 block">Página inicial <select value={settings.homepage} onChange={(e) => setSettings((s) => ({ ...s, homepage: e.target.value }))} className="ml-2 rounded border bg-transparent p-1"><option value="home">Início</option><option value="orbit">Orbit</option></select></label><label className="mt-2 block">Idioma <select value={settings.locale} onChange={(e) => setSettings((s) => ({ ...s, locale: e.target.value }))} className="ml-2 rounded border bg-transparent p-1"><option value="pt-BR">pt-BR</option><option value="en" disabled>EN (em breve)</option></select></label></section>
+            <section><h3 className="mb-2 font-semibold">Favoritos</h3><button onClick={() => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(favorites, null, 2)], { type: "application/json" })); a.download = "orbit-favoritos.json"; a.click(); }} className="rounded border px-2 py-1">Exportar JSON</button><label className="ml-2 cursor-pointer rounded border px-2 py-1">Importar JSON<input type="file" accept="application/json" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; file.text().then((raw) => { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) setFavorites(parsed.filter((f): f is Favorite => typeof f?.title === "string" && typeof f?.url === "string")); }).catch(() => setToast("Arquivo de favoritos inválido")); }} /></label></section>
+            <section><h3 className="mb-2 font-semibold">Privacidade</h3><button onClick={toggleGhost} className="rounded border px-2 py-1">{ghostMode ? "Desativar" : "Ativar"} Fantasma</button><p className="mt-2 text-zinc-500">{blockedCount} rastreadores bloqueados</p><button onClick={() => { if (window.confirm("Limpar dados do Orbit? Esta ação não pode ser desfeita.")) { if (window.confirm("Confirmar limpeza de histórico, abas e favoritos?")) { ["orbit_history", "orbit_chat_history", "orbit_tabs"].forEach((k) => localStorage.removeItem(k)); setUrlHistory([]); setTabs([{ id: ORBIT_TAB_ID, title: "Orbit", type: "orbit-chat" }]); } } }} className="mt-2 rounded border border-red-400 px-2 py-1 text-red-600">Limpar dados</button></section>
+            <section><h3 className="mb-2 font-semibold">IA</h3><label><input type="checkbox" checked={settings.premium} onChange={(e) => setSettings((s) => ({ ...s, premium: e.target.checked }))} /> 💎 Imagem premium</label><p className="mt-2 text-zinc-500">Gemini ✓ · OpenRouter ⚪</p></section>
+            <section><h3 className="mb-2 font-semibold">Sobre</h3><p>Orbit 0.1.0 · feito no Brasil 🇧🇷</p><a className="text-violet-600 underline" href="https://github.com" target="_blank" rel="noreferrer">GitHub</a></section>
+          </div>
+        </aside>
+      )}
 
       {/* Barra de favoritos (MELHORIA 1: gerenciáveis) */}
       <div className="scroll-slim flex items-center gap-4 overflow-x-auto border-b border-zinc-200 px-3 py-1.5 dark:border-white/[0.06]">
-        {favorites.map((f) => (
+        {folders.map((folder) => <button key={folder} type="button" onClick={() => setActiveFolder(folder)} className={`shrink-0 rounded-full px-2 py-1 text-[11px] ${activeFolder === folder ? "bg-violet-600 text-white" : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-white/10"}`}>📁 {folder}</button>)}
+        {visibleFavorites.map((f) => (
           <div key={f.url} className="group relative flex shrink-0 items-center">
             <button
               type="button"
@@ -1386,6 +1429,7 @@ export default function BrowserShell() {
             placeholder="URL (ex.: github.com)"
             className="h-8 min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-white/10 dark:bg-white/[0.05] dark:text-zinc-100 dark:placeholder:text-zinc-500 sm:min-w-[220px]"
           />
+          <input value={favFolder} onChange={(e) => setFavFolder(e.target.value)} placeholder="Pasta (Geral)" className="h-8 w-28 rounded-lg border border-zinc-200 bg-white px-3 text-[13px] text-zinc-900 outline-none dark:border-white/10 dark:bg-white/[0.05] dark:text-zinc-100" />
           <button
             type="submit"
             className="h-8 rounded-lg bg-zinc-900 px-4 text-[13px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"

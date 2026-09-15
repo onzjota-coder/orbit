@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { jsPDF } from "jspdf";
 import Logo from "./logo";
 
 const HISTORY_KEY = "orbit_chat_history";
@@ -37,6 +38,28 @@ function bumpUsage(): number {
   const count = getUsage() + 1;
   localStorage.setItem("orbit_usage", JSON.stringify({ date: new Date().toDateString(), count }));
   return count;
+}
+
+function downloadDocumentPdf(content: string, request: string) {
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  const margin = 18;
+  const width = 210 - margin * 2;
+  const height = 297 - margin;
+  let y = 22;
+  const lines = pdf.splitTextToSize(content, width) as string[];
+  for (const line of lines) {
+    const isHeading = /^[A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9][A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9 .:/-]{3,}$/.test(line.trim());
+    pdf.setFont("helvetica", isHeading ? "bold" : "normal");
+    pdf.setFontSize(isHeading ? 14 : 11);
+    if (y > height) {
+      pdf.addPage();
+      y = 22;
+    }
+    pdf.text(line, margin, y);
+    y += isHeading ? 7 : 5.5;
+  }
+  const slug = request.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").slice(0, 48) || "documento";
+  pdf.save(`orbit-${slug}.pdf`);
 }
 
 async function removeBgLocal(dataUrl: string): Promise<string> {
@@ -275,6 +298,34 @@ export default function OrbitChat() {
       setMessages((m) => [...m, { role: "user", text }, { role: "orbit", text: "⚙️ Configurações abertas acima. Toque no interruptor 💎 para alternar a qualidade das imagens geradas por texto." }]);
       setInput("");
       setShowSettings(true);
+      return;
+    }
+
+    const docTrigger = /(curr[ií]culo|declarac[aã]o|relat[óo]rio|contrato|recibo|certid[ãa]o|or[çc]amento|cronograma)/i;
+    const wantsFile = /(pdf|word|arquivo|documento|gerar|crie|fa[çc]a|monte|envie)/i;
+    if (docTrigger.test(text) && wantsFile.test(text)) {
+      setMessages((m) => [...m, { role: "user", text }, { role: "orbit", text: "📝 Gerando seu documento..." }]);
+      setInput("");
+      setLoading(true);
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: `Gere o conteúdo completo de ${text}. Formato: seções com títulos claros, campos entre [COLCHETES]. Português BR.`, history: [] }),
+        });
+        const data = await res.json();
+        if (data.reply) {
+          downloadDocumentPdf(data.reply, text);
+          setMessages((m) => [...m, { role: "orbit", text: "✅ Documento pronto e baixado! Quer ajustar algo? Diga o que mudar e regenero." }]);
+        } else {
+          setMessages((m) => [...m, { role: "orbit", text: data.error ?? "Não consegui gerar o documento agora. Tente novamente." }]);
+        }
+      } catch {
+        setMessages((m) => [...m, { role: "orbit", text: "Falha de conexão ao gerar o documento." }]);
+      } finally {
+        setUsed(bumpUsage());
+        setLoading(false);
+      }
       return;
     }
 
