@@ -16,6 +16,10 @@ type Tab = {
   url?: string;
   ghost?: boolean; // MODO FANTASMA: nunca persistida
   unverified?: boolean; // 🛡️ Tarefa 6: domínio suspeito que o usuário decidiu abrir mesmo assim
+  // TAREFA 2 — aviso de golpe DENTRO da aba (nunca modal antes dela)
+  scamBrand?: string;
+  scamOfficial?: string;
+  scamDismissed?: boolean;
 };
 
 type Favorite = { title: string; url: string };
@@ -121,6 +125,56 @@ const BRAND_EXEMPTS = [
   "googleusercontent.com",
   "gstatic.com",
 ];
+
+// ─────────────────────────────────────────────────────────────
+// MÓDULO ORBIT UX PRO — TAREFA 1: WHITELIST de sites oficiais.
+// Se o domínio da URL é (ou termina com) um item da whitelist, o check de
+// golpe é PULADO COMPLETAMENTE: abre direto, sem modal, sem cadeado.
+// O alerta de golpe SÓ existe para domínios que imitam marcas e NÃO estão
+// na whitelist (ex.: "youtube.com" abre direto; "openai-promo.xyz" alerta).
+// A correspondência é por HOST (igual ou subdomínio) + caminho quando o
+// item o define — substring solta ficaria vulnerável a bypass
+// (ex.: "youtube.com.evil.xyz" NÃO é whitelisted).
+// ─────────────────────────────────────────────────────────────
+const WHITELIST = [
+  "youtube.com",
+  "youtube.com/embed",
+  "google.com",
+  "mercadolivre.com.br",
+  "shopee.com.br",
+  "amazon.com.br",
+  "instagram.com",
+  "whatsapp.com",
+  "web.whatsapp.com",
+  "notion.so",
+  "z.ai",
+  "chat.deepseek.com",
+  "capcut.com",
+  "tiktok.com",
+  "notion.site",
+  "github.com",
+];
+
+function isWhitelisted(url: string): boolean {
+  let host = "";
+  let path = "";
+  try {
+    const u = new URL(url);
+    host = u.hostname.toLowerCase().replace(/^www\./, "");
+    path = (u.pathname + u.search).toLowerCase();
+  } catch {
+    // Sem URL válida (ex.: "orbit-yt-search:") → sem check de golpe a pular
+    return false;
+  }
+  return WHITELIST.some((w) => {
+    const [wHost, ...wPathParts] = w.split("/");
+    const wPath = wPathParts.length > 0 ? "/" + wPathParts.join("/") : "";
+    const hostOk = host === wHost || host.endsWith(`.${wHost}`);
+    if (!hostOk) return false;
+    if (wPath && !path.startsWith(wPath)) return false;
+    return true;
+  });
+}
 
 function suspiciousBrand(url: string): { brand: string; official: string } | null {
   let host: string;
@@ -321,6 +375,56 @@ function BlockedNotice({ url }: { url: string }) {
   );
 }
 
+// TAREFA 2 — Card de golpe DENTRO da aba (nunca modal antes dela):
+// elegante, com gradiente da marca Cosmos, e o site só carrega se o
+// usuário decidir continuar.
+function ScamGateCard({
+  url,
+  brand,
+  official,
+  onProceed,
+  onCancel,
+}: {
+  url: string;
+  brand: string;
+  official: string;
+  onProceed: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex h-full items-center justify-center p-8">
+      <div className="max-w-md rounded-2xl border border-red-500/30 bg-white p-8 text-center shadow-xl shadow-red-500/10 dark:border-red-400/25 dark:bg-[#1E1B4B]">
+        <p className="text-4xl">🛡️</p>
+        <p className="mt-4 text-[15px] font-semibold leading-relaxed text-zinc-900 dark:text-white">
+          Alerta de segurança
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300">
+          O domínio <span className="font-mono font-semibold text-zinc-900 dark:text-white">{domainOf(url)}</span> usa
+          o nome <span className="font-semibold text-zinc-900 dark:text-white">“{brand}”</span> sem ser o site oficial{" "}
+          <span className="font-mono text-zinc-900 dark:text-white">{official}</span>. Golpes comuns: produtos falsos e
+          roubo de login.
+        </p>
+        <div className="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={onProceed}
+            className="rounded-full bg-gradient-to-r from-[#7C3AED] to-[#4F46E5] px-5 py-2 text-[13px] font-semibold text-white shadow-lg shadow-violet-600/30 transition hover:brightness-110"
+          >
+            Continuar por minha conta
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-full border border-zinc-300 px-5 py-2 text-[13px] font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-white/15 dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+          >
+            Voltar ao início
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FrameSpinner() {
   return (
     <div className="absolute inset-0 z-10 flex items-center justify-center bg-white dark:bg-[#0E0E11]">
@@ -344,22 +448,31 @@ function GuardedFrame({
   ghost?: boolean;
 }) {
   const [status, setStatus] = useState<"loading" | "ok" | "blocked">("loading");
+  // TAREFA 2 — o spinner só aparece DENTRO da aba se o conteúdo NÃO carregar
+  // em 1,5s (nunca antes): o clique parece instantâneo.
+  const [spinnerVisible, setSpinnerVisible] = useState(false);
 
   useEffect(() => {
     setStatus("loading");
+    setSpinnerVisible(false);
+    // 1,5s: só então o spinner entra em cena (se ainda estiver carregando)
+    const spinnerTimer = window.setTimeout(() => setSpinnerVisible(true), 1500);
     // 8s: sites pesados (Shopee, Mercado Livre) demoram a sinalizar; só depois
     // disso trocamos pela mensagem elegante de "abrir fora".
     const timer = window.setTimeout(() => {
       setStatus((s) => (s === "loading" ? "blocked" : s));
     }, 8000);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(spinnerTimer);
+      window.clearTimeout(timer);
+    };
   }, [url, reloadKey]);
 
   if (status === "blocked") return <BlockedNotice url={url} />;
 
   return (
     <div className="relative h-full w-full bg-white">
-      {status === "loading" && <FrameSpinner />}
+      {status === "loading" && spinnerVisible && <FrameSpinner />}
       <iframe
         key={`${url}-${reloadKey}`}
         src={url}
@@ -485,14 +598,8 @@ export default function BrowserShell() {
   const [histories, setHistories] = useState<Record<string, { stack: string[]; index: number }>>({});
   const [reloadKey, setReloadKey] = useState(0);
   const [ghostMode, setGhostMode] = useState(false); // MODO FANTASMA: apenas state, NUNCA persistir
-  // 🛡️ Tarefa 6 — aviso de golpe antes de abrir domínio suspeito
-  const [scamWarn, setScamWarn] = useState<{
-    url: string;
-    title: string;
-    mode: "open" | "navigate";
-    brand: string;
-    official: string;
-  } | null>(null);
+  // TAREFA 2 — o modal de golpe pré-abertura foi REMOVIDO: o aviso agora vive
+  // dentro da aba (ScamGateCard), então o clique nunca é bloqueado antes.
   // 🛡️ Tarefa 7 — contadores de bloqueio (por sessão) e toast
   const [blockedCount, setBlockedCount] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
@@ -584,21 +691,6 @@ export default function BrowserShell() {
     setActiveId("inteligencias");
   }
 
-  // 🛡️ Tarefa 6 — usuário decidiu continuar em domínio suspeito: abre com badge
-  function proceedScam() {
-    if (!scamWarn) return;
-    const w = scamWarn;
-    setScamWarn(null);
-    if (w.mode === "navigate" && activeTab && activeTab.type === "iframe") {
-      navigateInTab(activeTab.id, w.url, w.title);
-      updateTab(activeTab.id, { unverified: true });
-    } else {
-      openIframeTab(w.url, w.title);
-      // a aba recém-criada é a última do array
-      setTabs((ts) => ts.map((t, i) => (i === ts.length - 1 ? { ...t, unverified: true } : t)));
-    }
-  }
-
   // 🛡️ Tarefa 7 — porta de entrada do blocklist: recusa tracker e conta
   function blockTracker(url: string): boolean {
     const tracker = matchedTracker(url);
@@ -608,14 +700,32 @@ export default function BrowserShell() {
     return true;
   }
 
-  // Aba nova abre IMEDIATAMENTE com o título do site (spinner cobre o carregamento)
+  // TAREFA 2 — clique = AÇÃO IMEDIATA: a aba é criada e ativada NA HORA
+  // (sem delay, sem processamento visível). O aviso de golpe — apenas para
+  // domínios suspeitos fora da whitelist — aparece DENTRO da aba.
   function openIframeTab(url: string, title: string) {
     // 🛡️ Tarefa 7: tracker → toast + contador, sem abrir a aba
     if (blockTracker(url)) return;
-    // 🛡️ Tarefa 6: domínio usa nome de marca oficial sem ser o oficial → aviso antes
-    const scam = suspiciousBrand(url);
+    const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    // TAREFA 1 — whitelist: sites oficiais PULAM COMPLETAMENTE o check de golpe
+    const scam = isWhitelisted(url) ? null : suspiciousBrand(url);
     if (scam) {
-      setScamWarn({ url, title, mode: "open", brand: scam.brand, official: scam.official });
+      const embedUrl = toEmbeddableUrl(url);
+      setTabs((ts) => [
+        ...ts,
+        {
+          id,
+          title,
+          type: "iframe",
+          url: embedUrl,
+          unverified: true,
+          scamBrand: scam.brand,
+          scamOfficial: scam.official,
+          ...(ghostMode ? { ghost: true } : {}),
+        },
+      ]);
+      if (!ghostMode) setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
+      setActiveId(id);
       return;
     }
     // Busca do YouTube ("yt: termo") → aba especial com vídeo fixo + nota
@@ -633,7 +743,6 @@ export default function BrowserShell() {
       openYouTubeTab();
       return;
     }
-    const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const embedUrl = toEmbeddableUrl(url);
     // MODO FANTASMA: aba marcada como fantasma e histórico NÃO gravado
     setTabs((ts) => [...ts, { id, title, type: "iframe", url: embedUrl, ...(ghostMode ? { ghost: true } : {}) }]);
@@ -696,10 +805,17 @@ export default function BrowserShell() {
   // Navegação pelo campo de URL
   function navigate(url: string, title: string) {
     if (!activeTab) return;
-    // 🛡️ Tarefa 6: mesmo gate da aba nova, preservando o modo de navegação
-    const scam = suspiciousBrand(url);
+    // TAREFA 1 — whitelist: mesmo gate da aba nova (sites oficiais nunca alertam)
+    const scam = isWhitelisted(url) ? null : suspiciousBrand(url);
+    if (scam && activeTab.type === "iframe") {
+      // TAREFA 2 — navegação suspeita: entra NA HORA, aviso DENTRO da aba
+      navigateInTab(activeTab.id, url, title);
+      updateTab(activeTab.id, { unverified: true, scamBrand: scam.brand, scamOfficial: scam.official, scamDismissed: false });
+      return;
+    }
     if (scam) {
-      setScamWarn({ url, title, mode: activeTab.type === "iframe" ? "navigate" : "open", brand: scam.brand, official: scam.official });
+      // TAREFA 2 — fora de um iframe: abre a aba imediatamente (aviso dentro dela)
+      openIframeTab(url, title);
       return;
     }
     // Busca do YouTube ("yt: termo") → reutiliza a aba do YouTube quando possível
@@ -809,6 +925,19 @@ export default function BrowserShell() {
     const url = activeTab.url ?? "";
     if (!url || isBlockedFrame(url)) {
       return <BlockedNotice url={url} />;
+    }
+    // TAREFA 2 — aviso de golpe DENTRO da aba (nunca modal antes): o site só
+    // carrega depois de o usuário decidir continuar.
+    if (activeTab.scamBrand && !activeTab.scamDismissed) {
+      return (
+        <ScamGateCard
+          url={url}
+          brand={activeTab.scamBrand}
+          official={activeTab.scamOfficial ?? ""}
+          onProceed={() => updateTab(activeTab.id, { scamDismissed: true })}
+          onCancel={() => closeTab(activeTab.id)}
+        />
+      );
     }
     return <GuardedFrame url={url} title={activeTab.title} reloadKey={reloadKey} ghost={activeTab.ghost} />;
   }
@@ -1015,39 +1144,6 @@ export default function BrowserShell() {
       {toast && (
         <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full border border-emerald-500/40 bg-[#0d1f16] px-5 py-2.5 text-[13px] font-semibold text-emerald-300 shadow-2xl">
           {toast}
-        </div>
-      )}
-
-      {/* 🛡️ Tarefa 6 — modal de golpe por domínio */}
-      {scamWarn && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-6">
-          <div className="w-full max-w-md rounded-xl border border-red-500/40 bg-white p-6 text-center shadow-2xl dark:border-red-400/30 dark:bg-[#141014]">
-            <p className="text-4xl">🛡️</p>
-            <p className="mt-3 text-[14.5px] font-semibold leading-relaxed text-zinc-900 dark:text-white">
-              ALERTA: este domínio pode se passar por marca oficial.
-            </p>
-            <p className="mt-2 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300">
-              O domínio <span className="font-mono font-semibold text-zinc-900 dark:text-white">{domainOf(scamWarn.url)}</span>{" "}
-              usa o nome <span className="font-semibold">“{scamWarn.brand}”</span> sem ser o site oficial (
-              <span className="font-mono">{scamWarn.official}</span>). Golpes comuns: produtos falsos e roubo de login.
-            </p>
-            <div className="mt-5 flex flex-col items-center justify-center gap-2 sm:flex-row">
-              <button
-                type="button"
-                onClick={proceedScam}
-                className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
-              >
-                Continuar por minha conta
-              </button>
-              <button
-                type="button"
-                onClick={() => setScamWarn(null)}
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-[13px] font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-white/15 dark:text-zinc-200 dark:hover:bg-white/[0.06]"
-              >
-                Voltar
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </section>
