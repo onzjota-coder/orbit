@@ -1,13 +1,21 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Logo from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 import OrbitChat from "./orbit-chat";
 import IntelligenceHub from "./intelligence-hub";
 import { BLOCKED_TRACKERS } from "@/lib/blocklist";
 
-type TabType = "home" | "iframe" | "orbit-chat" | "youtube" | "youtube-search" | "inteligencias";
+type TabType =
+  | "home"
+  | "iframe"
+  | "orbit-chat"
+  | "youtube"
+  | "youtube-search"
+  | "inteligencias"
+  | "arena"
+  | "privacidade";
 
 type Tab = {
   id: string;
@@ -24,12 +32,40 @@ type Tab = {
 
 type Favorite = { title: string; url: string };
 
+// TAREFA 20 — atalhos da home com anel (ring) da cor da marca
+type HomeShortcut = Favorite & { ring: string; shadow: string };
+
+// TAREFA 18 — item do histórico de navegação local
+type UrlHistoryItem = { title: string; url: string; at: number };
+
 const ORBIT_TAB_ID = "orbit";
 const HOME_TAB_ID = "home";
+const ARENA_TAB_ID = "arena";
+const PRIVACY_TAB_ID = "privacidade";
 
-// Playlist embed do YouTube permitida fora do iframe (youtube-nocookie)
+const SIDEBAR_KEY = "orbit_sidebar"; // TAREFA 12 — sidebar persistente
+const TRUSTED_KEY = "orbit_trusted"; // TAREFA 25 — zona de confiança
+const URL_HISTORY_KEY = "orbit_history"; // TAREFA 18 — histórico de navegação
+const URL_HISTORY_MAX = 200;
+
+// TAREFA 2 — YouTube: domínio normal (youtube-nocookie causava Erro 153) + origin
 const YOUTUBE_PLAYLIST_EMBED =
-  "https://www.youtube-nocookie.com/embed/videoseries?list=PLFgquLnL59amXB0-e43CUn39fhv7U3CGv";
+  "https://www.youtube.com/embed/videoseries?list=PLFgquLnL59amXB0-e43CUn39fhv7U3CGv";
+
+// TAREFA 2 — origin da app + playsinline (sem origin o YouTube devolve Erro 153)
+function ytOrigin(): string {
+  return typeof window !== "undefined" ? window.location.origin : "";
+}
+
+function ytParams(base: string): string {
+  const sep = base.includes("?") ? "&" : "?";
+  return `${base}${sep}origin=${encodeURIComponent(ytOrigin())}&playsinline=1`;
+}
+
+// TAREFA 16 — é um vídeo do YouTube (para o resumo via oEmbed)?
+function isYouTubeVideoUrl(url: string): boolean {
+  return /youtube\.com\/embed\/[\w-]{6,}/i.test(url);
+}
 
 // Vídeo fixo de destaque — fallback quando a busca completa do YouTube
 // (embed listType=search, descontinuada pelo Google) não está disponível
@@ -46,14 +82,15 @@ const DEFAULT_FAVORITES: Favorite[] = [
 ];
 
 // Atalhos grandes da aba home (inclui Amazon, que não é favorito)
-const HOME_SHORTCUTS: Favorite[] = [
-  { title: "YouTube", url: "https://www.youtube.com" },
-  { title: "Google", url: "https://www.google.com" },
-  { title: "Mercado Livre", url: "https://www.mercadolivre.com.br" },
-  { title: "Shopee", url: "https://shopee.com.br" },
-  { title: "Amazon", url: "https://www.amazon.com.br" },
-  { title: "Instagram", url: "https://www.instagram.com" },
-  { title: "WhatsApp Web", url: "https://web.whatsapp.com" },
+// TAREFA 20 — cada um traz o anel (ring) e a sombra da cor da marca
+const HOME_SHORTCUTS: HomeShortcut[] = [
+  { title: "YouTube", url: "https://www.youtube.com", ring: "ring-red-500", shadow: "hover:shadow-red-500/40" },
+  { title: "Google", url: "https://www.google.com", ring: "ring-blue-500", shadow: "hover:shadow-blue-500/40" },
+  { title: "Mercado Livre", url: "https://www.mercadolivre.com.br", ring: "ring-yellow-400", shadow: "hover:shadow-yellow-400/40" },
+  { title: "Shopee", url: "https://shopee.com.br", ring: "ring-orange-500", shadow: "hover:shadow-orange-500/40" },
+  { title: "Amazon", url: "https://www.amazon.com.br", ring: "ring-amber-500", shadow: "hover:shadow-amber-500/40" },
+  { title: "Instagram", url: "https://www.instagram.com", ring: "ring-pink-500", shadow: "hover:shadow-pink-500/40" },
+  { title: "WhatsApp Web", url: "https://web.whatsapp.com", ring: "ring-green-500", shadow: "hover:shadow-green-500/40" },
 ];
 
 // Sites conhecidos que bloqueiam exibição em iframe (X-Frame-Options/CSP) →
@@ -155,6 +192,49 @@ const WHITELIST = [
   "github.com",
 ];
 
+function readUrlHistory(): UrlHistoryItem[] {
+  try {
+    const raw = localStorage.getItem("orbit_history");
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeUrlHistory(items: UrlHistoryItem[]): void {
+  try {
+    localStorage.setItem("orbit_history", JSON.stringify(items.slice(-200)));
+  } catch {}
+}
+
+function getTrustedHosts(): string[] {
+  try {
+    const raw = localStorage.getItem("orbit_trusted");
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function isTrustedHost(url: string): boolean {
+  const host = domainOf(url);
+  if (!host) return false;
+  return getTrustedHosts().some((t) => host === t || host.endsWith(`.${t}`));
+}
+
+function trustHost(url: string): void {
+  const host = domainOf(url);
+  if (!host) return;
+  const trusted = getTrustedHosts();
+  if (!trusted.includes(host)) {
+    try {
+      localStorage.setItem("orbit_trusted", JSON.stringify([...trusted, host]));
+    } catch {}
+  }
+}
+
 function isWhitelisted(url: string): boolean {
   let host = "";
   let path = "";
@@ -221,15 +301,19 @@ function ytSearchTerm(url: string): string | null {
 }
 
 // YouTube: converte URLs comuns em embeds que funcionam dentro do shell
+// (TAREFA 2 — sempre com origin+playsinline para evitar o Erro 153)
 function toEmbeddableUrl(url: string): string {
   const watch = url.match(/youtube\.com\/watch\?v=([\w-]+)/i);
-  if (watch) return `https://www.youtube.com/embed/${watch[1]}`;
+  if (watch) return ytParams(`https://www.youtube.com/embed/${watch[1]}`);
   const short = url.match(/youtu\.be\/([\w-]+)/i);
-  if (short) return `https://www.youtube.com/embed/${short[1]}`;
+  if (short) return ytParams(`https://www.youtube.com/embed/${short[1]}`);
+  if (/youtube\.com\/embed\//i.test(url) && !/[?&]origin=/.test(url)) return ytParams(url);
   return url;
 }
 
-function resolveUrlInput(raw: string): { url: string; title: string } | null {
+// TAREFA 1 — resolução do campo de URL. Texto livre NUNCA vira iframe bloqueado:
+// vai direto para o Google numa nova aba do sistema (external: true).
+function resolveUrlInput(raw: string): { url: string; title: string; external?: boolean } | null {
   const input = raw.trim();
   if (!input) return null;
 
@@ -245,13 +329,17 @@ function resolveUrlInput(raw: string): { url: string; title: string } | null {
   const looksLikeUrl = /^https?:\/\//i.test(input) || (input.includes(".") && !/\s/.test(input));
   if (looksLikeUrl) {
     const url = /^https?:\/\//i.test(input) ? input : `https://${input}`;
+    // TAREFA 1 — domínio que bloqueia iframe (google, instagram, ML…) → abre
+    // DIRETO em nova aba do sistema: o usuário nunca vê cadeado para sites comuns
+    if (isBlockedFrame(url)) return { url, title: domainOf(url), external: true };
     return { url, title: domainOf(url) };
   }
 
-  // Texto livre → busca no Google (se bloquear, o shell mostra o fallback "abrir fora")
+  // TAREFA 1 — texto livre → busca no Google numa nova aba do sistema
   return {
     url: `https://www.google.com/search?q=${encodeURIComponent(input)}`,
     title: `Busca: ${input}`,
+    external: true,
   };
 }
 
@@ -603,6 +691,19 @@ export default function BrowserShell() {
   // 🛡️ Tarefa 7 — contadores de bloqueio (por sessão) e toast
   const [blockedCount, setBlockedCount] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
+  // TAREFA 5/18 — sugestões e histórico no campo de URL
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestIdx, setSuggestIdx] = useState(-1);
+  const [urlHistory, setUrlHistory] = useState<UrlHistoryItem[]>([]);
+  // TAREFA 6/7 — Ctrl+Tab (alternar) e Ctrl+Shift+T (reabrir aba fechada)
+  const [lastActiveId, setLastActiveId] = useState<string>(ORBIT_TAB_ID);
+  const [closedTab, setClosedTab] = useState<{ tab: Tab; index: number } | null>(null);
+  // TAREFA 12 — sidebar de IA persistente (orbit_sidebar)
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  // TAREFA 3 — favoritos colapsáveis no mobile
+  const [favExpanded, setFavExpanded] = useState(false);
+  const urlRef = useRef<HTMLInputElement>(null);
+  const prevActiveId = useRef(ORBIT_TAB_ID);
 
   // Toast some sozinho após 3,5s
   useEffect(() => {
@@ -659,6 +760,64 @@ export default function BrowserShell() {
     } catch {}
   }, [favorites]);
 
+  // TAREFA 12/18 — carrega preferências locais (sidebar + histórico de URLs)
+  useEffect(() => {
+    try {
+      setSidebarOpen(localStorage.getItem(SIDEBAR_KEY) === "true");
+    } catch {}
+    setUrlHistory(readUrlHistory());
+  }, []);
+
+  // TAREFA 12 — persiste a sidebar aberta/fechada
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_KEY, String(sidebarOpen));
+    } catch {}
+  }, [sidebarOpen]);
+
+  // TAREFA 6 — guarda a aba anterior para o Ctrl+Tab
+  useEffect(() => {
+    if (activeId !== prevActiveId.current) {
+      setLastActiveId(prevActiveId.current);
+      prevActiveId.current = activeId;
+    }
+  }, [activeId]);
+
+  // TAREFAS 6, 7, 11 — atalhos de teclado globais do shell
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === "Tab") {
+        e.preventDefault();
+        switchToLastTab();
+        return;
+      }
+      if (mod && e.shiftKey && (e.key === "T" || e.key === "t")) {
+        e.preventDefault();
+        reopenClosedTab();
+        return;
+      }
+      if (mod && (e.key === "w" || e.key === "W")) {
+        e.preventDefault();
+        closeTab(activeId);
+        return;
+      }
+      if (mod && (e.key === "l" || e.key === "L" || e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        urlRef.current?.focus();
+        urlRef.current?.select();
+        setSuggestOpen(true);
+        return;
+      }
+      if (e.key === "Escape") {
+        setSuggestOpen(false);
+        setSuggestIdx(-1);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeId, tabs, closedTab, lastActiveId]);
+
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   const activeHistory = activeTab ? histories[activeTab.id] : undefined;
   const canBack =
@@ -674,10 +833,10 @@ export default function BrowserShell() {
     setTabs((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));
   }
 
-  function openYouTubeTab() {
+  function openYouTubeTab(background = false) {
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setTabs((ts) => [...ts, { id, title: "YouTube", type: "youtube", ...(ghostMode ? { ghost: true } : {}) }]);
-    setActiveId(id);
+    if (!background) setActiveId(id);
   }
 
   // Aba especial do HUB DE INTELIGÊNCIAS (id fixo → reabrir só a ativa)
@@ -689,6 +848,26 @@ export default function BrowserShell() {
     }
     setTabs((ts) => [...ts, { id: "inteligencias", title: "🧠 Inteligências", type: "inteligencias" }]);
     setActiveId("inteligencias");
+  }
+
+  // TAREFA 17 — aba especial da Arena Multi-IA (id fixo → reabre só a ativa)
+  function openArenaTab() {
+    if (tabs.some((t) => t.id === ARENA_TAB_ID)) {
+      setActiveId(ARENA_TAB_ID);
+      return;
+    }
+    setTabs((ts) => [...ts, { id: ARENA_TAB_ID, title: "⚖️ Arena de IAs", type: "arena" }]);
+    setActiveId(ARENA_TAB_ID);
+  }
+
+  // TAREFA 23 — aba especial do dashboard de privacidade (100% local)
+  function openPrivacyTab() {
+    if (tabs.some((t) => t.id === PRIVACY_TAB_ID)) {
+      setActiveId(PRIVACY_TAB_ID);
+      return;
+    }
+    setTabs((ts) => [...ts, { id: PRIVACY_TAB_ID, title: "📊 Privacidade", type: "privacidade" }]);
+    setActiveId(PRIVACY_TAB_ID);
   }
 
   // 🛡️ Tarefa 7 — porta de entrada do blocklist: recusa tracker e conta
@@ -703,12 +882,40 @@ export default function BrowserShell() {
   // TAREFA 2 — clique = AÇÃO IMEDIATA: a aba é criada e ativada NA HORA
   // (sem delay, sem processamento visível). O aviso de golpe — apenas para
   // domínios suspeitos fora da whitelist — aparece DENTRO da aba.
-  function openIframeTab(url: string, title: string) {
+  // TAREFA 1 — abre um URL em NOVA ABA DO SISTEMA (nunca cadeado para sites comuns)
+  function openExternal(url: string, message?: string) {
+    try {
+      window.open(url, "_blank", "noopener,noreferrer");
+      setToast(message ?? `${domainOf(url)} aberta em nova aba`);
+    } catch {
+      setToast("Não foi possível abrir a nova aba — verifique o bloqueador de pop-ups.");
+    }
+  }
+
+  // TAREFA 18 — registra a URL no histórico local (título + timestamp)
+  function rememberUrl(url: string, title: string) {
+    if (!url || url.startsWith("orbit-yt-search:")) return;
+    try {
+      const entry: UrlHistoryItem = { title: title || domainOf(url), url, at: Date.now() };
+      const rest = readUrlHistory().filter((h) => h.url !== url);
+      const next = [entry, ...rest].slice(0, URL_HISTORY_MAX);
+      writeUrlHistory(next);
+      setUrlHistory(next);
+    } catch {}
+  }
+
+  function openIframeTab(url: string, title: string, background = false) {
     // 🛡️ Tarefa 7: tracker → toast + contador, sem abrir a aba
     if (blockTracker(url)) return;
+    // TAREFA 1 — sites que bloqueiam iframe (google, instagram, ML…) abrem
+    // DIRETO em nova aba do sistema: nunca cadeado para sites comuns
+    if (isBlockedFrame(url)) {
+      openExternal(url, `${title || domainOf(url)} aberta em nova aba`);
+      return;
+    }
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    // TAREFA 1 — whitelist: sites oficiais PULAM COMPLETAMENTE o check de golpe
-    const scam = isWhitelisted(url) ? null : suspiciousBrand(url);
+    // TAREFA 1/25 — whitelist e zona de confiança PULAM o check de golpe
+    const scam = isWhitelisted(url) || isTrustedHost(url) ? null : suspiciousBrand(url);
     if (scam) {
       const embedUrl = toEmbeddableUrl(url);
       setTabs((ts) => [
@@ -725,7 +932,8 @@ export default function BrowserShell() {
         },
       ]);
       if (!ghostMode) setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
-      setActiveId(id);
+      if (!background) setActiveId(id);
+      rememberUrl(embedUrl, title);
       return;
     }
     // Busca do YouTube ("yt: termo") → aba especial com vídeo fixo + nota
@@ -736,7 +944,7 @@ export default function BrowserShell() {
         ...ts,
         { id: ytId, title, type: "youtube-search", url: ytTerm, ...(ghostMode ? { ghost: true } : {}) },
       ]);
-      setActiveId(ytId);
+      if (!background) setActiveId(ytId);
       return;
     }
     if (isYouTubeHome(url)) {
@@ -747,7 +955,8 @@ export default function BrowserShell() {
     // MODO FANTASMA: aba marcada como fantasma e histórico NÃO gravado
     setTabs((ts) => [...ts, { id, title, type: "iframe", url: embedUrl, ...(ghostMode ? { ghost: true } : {}) }]);
     if (!ghostMode) setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
-    setActiveId(id);
+    if (!background) setActiveId(id);
+    rememberUrl(embedUrl, title);
   }
 
   function newTab() {
@@ -768,8 +977,33 @@ export default function BrowserShell() {
 
   function closeTab(id: string) {
     if (id === ORBIT_TAB_ID) return; // a aba Orbit é fixa
+    // TAREFA 7 — guarda a aba fechada para o undo (Ctrl+Shift+T)
+    const idx = tabs.findIndex((t) => t.id === id);
+    if (idx >= 0) setClosedTab({ tab: tabs[idx], index: idx });
     setTabs((ts) => ts.filter((t) => t.id !== id));
     setActiveId((cur) => (cur === id ? ORBIT_TAB_ID : cur));
+  }
+
+  // TAREFA 7 — reabre a última aba fechada NA MESMA POSIÇÃO
+  function reopenClosedTab() {
+    if (!closedTab) return;
+    const { tab, index } = closedTab;
+    setTabs((ts) => {
+      if (ts.some((t) => t.id === tab.id)) return ts;
+      const next = [...ts];
+      next.splice(Math.min(index, next.length), 0, tab);
+      return next;
+    });
+    setActiveId(tab.id);
+    setClosedTab(null);
+    setToast(`↩️ Aba "${tab.title}" reaberta`);
+  }
+
+  // TAREFA 6 — Ctrl+Tab alterna entre as 2 últimas abas
+  function switchToLastTab() {
+    if (!lastActiveId || lastActiveId === activeId) return;
+    if (!tabs.some((t) => t.id === lastActiveId)) return;
+    setActiveId(lastActiveId);
   }
 
   // Logo → volta para a aba home (recria se foi fechada)
@@ -795,6 +1029,7 @@ export default function BrowserShell() {
       return;
     }
     updateTab(tabId, { type: "iframe", url: embedUrl, title });
+    rememberUrl(embedUrl, title);
     setHistories((h) => {
       const cur = h[tabId] ?? { stack: [], index: -1 };
       const stack = [...cur.stack.slice(0, cur.index + 1), embedUrl];
@@ -805,8 +1040,14 @@ export default function BrowserShell() {
   // Navegação pelo campo de URL
   function navigate(url: string, title: string) {
     if (!activeTab) return;
-    // TAREFA 1 — whitelist: mesmo gate da aba nova (sites oficiais nunca alertam)
-    const scam = isWhitelisted(url) ? null : suspiciousBrand(url);
+    // TAREFA 1 — tracker → recusa; site que bloqueia iframe → abre em nova aba
+    if (blockTracker(url)) return;
+    if (isBlockedFrame(url)) {
+      openExternal(url, `${title || domainOf(url)} aberta em nova aba`);
+      return;
+    }
+    // TAREFA 1/25 — whitelist e zona de confiança nunca alertam
+    const scam = isWhitelisted(url) || isTrustedHost(url) ? null : suspiciousBrand(url);
     if (scam && activeTab.type === "iframe") {
       // TAREFA 2 — navegação suspeita: entra NA HORA, aviso DENTRO da aba
       navigateInTab(activeTab.id, url, title);
@@ -847,8 +1088,21 @@ export default function BrowserShell() {
     e.preventDefault();
     const resolved = resolveUrlInput(urlInput);
     if (!resolved) return;
+    // TAREFA 1 — texto livre / domínio bloqueador → nova aba do sistema (nunca 🔒)
+    if (resolved.external) {
+      openExternal(
+        resolved.url,
+        resolved.title.startsWith("Busca:")
+          ? "🌐 Busca do Google aberta em nova aba"
+          : `🌐 ${resolved.title} aberta em nova aba`
+      );
+      setUrlInput("");
+      setSuggestOpen(false);
+      return;
+    }
     navigate(resolved.url, resolved.title);
     setUrlInput("");
+    setSuggestOpen(false);
   }
 
   // MELHORIA 1 — adiciona favorito pelo formulário inline
@@ -891,6 +1145,45 @@ export default function BrowserShell() {
     setReloadKey((k) => k + 1);
   }
 
+  // TAREFA 13 — contexto da página ativa (enviado à IA na sidebar)
+  const pageContext: { title: string; url: string } | null =
+    activeTab && (activeTab.type === "iframe" || activeTab.type === "youtube")
+      ? { title: activeTab.title, url: activeTab.url ?? "https://www.youtube.com" }
+      : null;
+
+  // TAREFA 5 — sugestões do campo de URL (favoritos filtrados + busca no Google)
+  const suggestions = useMemo(() => {
+    const q = urlInput.trim().toLowerCase();
+    const list = (q
+      ? favorites.filter((f) => f.title.toLowerCase().includes(q) || f.url.toLowerCase().includes(q))
+      : favorites
+    )
+      .slice(0, 5)
+      .map((f) => ({ label: f.title, sub: f.url, url: f.url, title: f.title }));
+    const term = urlInput.trim();
+    if (term && !/^https?:\/\//i.test(term)) {
+      list.push({
+        label: `Buscar "${term}" no Google`,
+        sub: "abre em nova aba",
+        url: `https://www.google.com/search?q=${encodeURIComponent(term)}`,
+        title: `Busca: ${term}`,
+      });
+    }
+    return list;
+  }, [urlInput, favorites]);
+
+  // TAREFA 5 — executa a sugestão escolhida (Enter, setas + Enter, ou clique)
+  function runSuggestion(item: { label: string; sub: string; url: string; title: string }) {
+    setSuggestOpen(false);
+    setSuggestIdx(-1);
+    setUrlInput("");
+    if (item.sub === "abre em nova aba") {
+      openExternal(item.url, "🌐 Busca do Google aberta em nova aba");
+      return;
+    }
+    navigate(item.url, item.title);
+  }
+
   function renderContent() {
     if (!activeTab) return null;
     if (activeTab.type === "orbit-chat") {
@@ -922,6 +1215,20 @@ export default function BrowserShell() {
     if (activeTab.type === "youtube-search") {
       return <YouTubeSearchFallback term={activeTab.url ?? ""} />;
     }
+    // TAREFA 17 — Arena Multi-IA
+    if (activeTab.type === "arena") {
+      return (
+        <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+          🏟️ Arena Multi-IA — em desenvolvimento
+        </div>
+      );
+    }
+    // TAREFA 23 — Dashboard de privacidade (100% local, estilo Brave)
+    if (activeTab.type === "privacidade") {
+      return (
+        <>{/* <PrivacyDashboard blockedCount={blockedCount} tabsCount={tabs.length} historyCount={urlHistory.length} /> */}</>
+      );
+    }
     const url = activeTab.url ?? "";
     if (!url || isBlockedFrame(url)) {
       return <BlockedNotice url={url} />;
@@ -934,12 +1241,24 @@ export default function BrowserShell() {
           url={url}
           brand={activeTab.scamBrand}
           official={activeTab.scamOfficial ?? ""}
-          onProceed={() => updateTab(activeTab.id, { scamDismissed: true })}
+          onProceed={() => {
+            // TAREFA 25 — "Sempre permitir este site" → zona de confiança
+            trustHost(url);
+            updateTab(activeTab.id, { scamDismissed: true, unverified: false });
+          }}
           onCancel={() => closeTab(activeTab.id)}
         />
       );
     }
-    return <GuardedFrame url={url} title={activeTab.title} reloadKey={reloadKey} ghost={activeTab.ghost} />;
+    // TAREFA 22 — erro estilizado (🛰️ Sinal perdido) com Recarregar / Abrir fora
+    return (
+      <GuardedFrame
+        url={url}
+        title={activeTab.title}
+        reloadKey={reloadKey}
+        ghost={activeTab.ghost}
+      />
+    );
   }
 
   const iconBtn =
