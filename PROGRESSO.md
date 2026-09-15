@@ -1,0 +1,1 @@
+- 15/09: Polish visual + YouTube experimental + ROADMAP.md criado com 100 ideias

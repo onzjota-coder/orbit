@@ -41,12 +41,15 @@ function bumpUsage(): number {
 }
 
 function downloadDocumentPdf(content: string, request: string) {
+  function sanitizePdfText(value: string) {
+    return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[Ã¡Ã Ã£Ã¢Ã¤]/gi, "a").replace(/[Ã©ÃªÃ«]/gi, "e").replace(/[Ã­Ã¯]/gi, "i").replace(/[Ã³ÃµÃ´Ã¶]/gi, "o").replace(/[ÃºÃ¼]/gi, "u").replace(/[Ã§]/gi, "c");
+  }
   const pdf = new jsPDF({ unit: "mm", format: "a4" });
   const margin = 18;
   const width = 210 - margin * 2;
   const height = 297 - margin;
   let y = 22;
-  const lines = pdf.splitTextToSize(content, width) as string[];
+  const lines = pdf.splitTextToSize(sanitizePdfText(content), width) as string[];
   for (const line of lines) {
     const isHeading = /^[A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9][A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9 .:/-]{3,}$/.test(line.trim());
     pdf.setFont("helvetica", isHeading ? "bold" : "normal");
@@ -58,6 +61,15 @@ function downloadDocumentPdf(content: string, request: string) {
     pdf.text(line, margin, y);
     y += isHeading ? 7 : 5.5;
   }
+  if (y > height - 12) {
+    pdf.addPage();
+    y = 22;
+  }
+  pdf.setFont("helvetica", "normal");
+  pdf.setFontSize(9);
+  pdf.setTextColor(130, 130, 130);
+  pdf.text(`Gerado por Orbit 🪐 — ${new Date().toLocaleDateString("pt-BR")}`, margin, y + 4);
+  pdf.setTextColor(0, 0, 0);
   const slug = request.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").slice(0, 48) || "documento";
   pdf.save(`orbit-${slug}.pdf`);
 }
@@ -314,9 +326,9 @@ export default function OrbitChat() {
           body: JSON.stringify({ message: `Gere o conteúdo completo de ${text}. Formato: seções com títulos claros, campos entre [COLCHETES]. Português BR.`, history: [] }),
         });
         const data = await res.json();
-        if (data.reply) {
+        if (typeof data.reply === "string" && data.reply.trim().length >= 50) {
           downloadDocumentPdf(data.reply, text);
-          setMessages((m) => [...m, { role: "orbit", text: "✅ Documento pronto e baixado! Quer ajustar algo? Diga o que mudar e regenero." }]);
+          setMessages((m) => [...m, { role: "orbit", text: "✅ PDF baixado! Confira Downloads. Diga 'regenere' com as mudanças." }]);
         } else {
           setMessages((m) => [...m, { role: "orbit", text: data.error ?? "Não consegui gerar o documento agora. Tente novamente." }]);
         }
@@ -655,7 +667,7 @@ export default function OrbitChat() {
           <div key={i}>
             {m.role === "user" ? (
               <div className="flex justify-end">
-                <div className="max-w-[80%] whitespace-pre-wrap bg-zinc-900 px-4 py-2.5 text-[13.5px] leading-relaxed text-white dark:bg-white/[0.07] dark:text-zinc-100">
+                <div className="max-w-[80%] rounded-xl whitespace-pre-wrap bg-zinc-900 px-4 py-2.5 text-[13.5px] leading-relaxed text-white dark:bg-white/[0.07] dark:text-zinc-100">
                   {m.text}
                 </div>
               </div>
@@ -666,7 +678,7 @@ export default function OrbitChat() {
                   {m.image && (
                     <a href={m.image} download="orbit-vitrine.png" target="_blank" rel="noopener noreferrer">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={m.image} alt="Imagem de vitrine gerada" className="mb-2 max-w-[280px] cursor-pointer rounded-lg border border-zinc-200 transition hover:opacity-90 dark:border-white/10" />
+                      <img src={m.image} alt="Imagem de vitrine gerada" className="mb-2 max-w-[280px] cursor-pointer rounded-2xl border border-zinc-200 transition hover:opacity-90 dark:border-white/10" />
                     </a>
                   )}
                   {m.text && (
