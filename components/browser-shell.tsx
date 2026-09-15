@@ -704,6 +704,63 @@ function YouTubeHome({ onSearch, onToast }: { onSearch: (term: string) => void; 
 }
 
 // ─────────────────────────────────────────────────────────────
+type YoutubeSearchResult = { videoId: string; title: string; channel: string; thumbnail: string; publishedAt: string };
+
+function YouTubeRealHome({ onToast }: { onToast: (message: string) => void }) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [results, setResults] = useState<YoutubeSearchResult[]>([]);
+  const [selectedVideo, setSelectedVideo] = useState<YoutubeSearchResult | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function searchYouTube(event: React.FormEvent) {
+    event.preventDefault();
+    const query = searchQuery.trim();
+    if (!query) return;
+    setLoading(true);
+    setError(null);
+    setSelectedVideo(null);
+    try {
+      const response = await fetch("/api/youtube?q=" + encodeURIComponent(query));
+      const data = await response.json();
+      if (data.error === "sem_chave") {
+        setError(data.instrucoes ?? "Configure YOUTUBE_API_KEY para pesquisar.");
+        setResults([]);
+      } else if (!response.ok) {
+        setError(data.error ?? "Não foi possível buscar vídeos agora.");
+        setResults([]);
+      } else {
+        setResults(data.results ?? []);
+      }
+    } catch {
+      setError("Falha de conexão com a busca do YouTube.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const relativeDate = (date: string) => {
+    const days = Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 86400000));
+    if (days < 1) return "hoje";
+    if (days < 30) return "há " + days + (days === 1 ? " dia" : " dias");
+    const months = Math.floor(days / 30);
+    return "há " + months + (months === 1 ? " mês" : " meses");
+  };
+
+  return (
+    <div className="scroll-slim h-full overflow-y-auto bg-[#0F0F0F] p-6 text-white sm:p-8">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-8 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3"><span className="flex h-10 w-14 items-center justify-center rounded-xl bg-red-600"><svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z" /></svg></span><span className="text-2xl font-semibold">YouTube</span></div>
+          <div className="flex items-center gap-2"><button type="button" onClick={() => { window.open("https://www.youtube.com", "_blank", "noopener,noreferrer"); onToast("🌐 YouTube real aberto em nova aba"); }} className="rounded-xl border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:bg-white/10">Abrir no YouTube ↗</button><button type="button" onClick={() => { window.open("https://piped.video", "_blank", "noopener,noreferrer"); onToast("🧪 Frontend alternativo da comunidade — sem anúncios"); }} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-zinc-400 hover:bg-white/10">🧪 Zero anúncios</button></div>
+        </div>
+        <form onSubmit={searchYouTube} className="mx-auto mb-8 flex w-full max-w-2xl gap-2"><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Buscar vídeos no YouTube…" className="h-12 min-w-0 flex-1 rounded-full border border-white/15 bg-white/[0.06] px-5 text-sm outline-none placeholder:text-zinc-500 focus:border-white/40" /><button type="submit" disabled={loading} className="rounded-xl bg-red-600 px-5 text-sm font-semibold hover:bg-red-500 disabled:opacity-50">{loading ? "Buscando…" : "Buscar"}</button></form>
+        {selectedVideo ? <div><button type="button" onClick={() => setSelectedVideo(null)} className="mb-4 rounded-xl border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:bg-white/10">← Voltar aos resultados</button><h2 className="text-xl font-semibold">{selectedVideo.title}</h2><p className="mb-4 text-sm text-zinc-400">{selectedVideo.channel}</p><div className="overflow-hidden rounded-3xl border border-white/10"><iframe src={"https://www.youtube.com/embed/" + selectedVideo.videoId + "?playsinline=1&rel=0"} title={selectedVideo.title} className="aspect-video w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="no-referrer" /></div></div> : error ? <div className="mx-auto max-w-xl rounded-3xl border border-amber-400/30 bg-amber-400/10 p-6 text-sm text-amber-100"><h2 className="mb-3 text-lg font-semibold">Configure a busca do YouTube</h2><p className="mb-4 leading-relaxed">{error}</p><a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noreferrer" className="font-semibold underline">Abrir console.cloud.google.com →</a></div> : results.length ? <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{results.map((video) => <button key={video.videoId} type="button" onClick={() => setSelectedVideo(video)} className="group text-left"><div className="overflow-hidden rounded-xl bg-zinc-900"><img src={video.thumbnail} alt="" className="aspect-video w-full object-cover transition group-hover:scale-105" /></div><h2 className="mt-3 line-clamp-2 text-sm font-semibold leading-snug">{video.title}</h2><p className="mt-1 text-xs text-zinc-400">{video.channel} · {relativeDate(video.publishedAt)}</p></button>)}</div> : <p className="text-center text-xs text-zinc-500">Pesquise um vídeo para ver thumbnails e assistir dentro do Orbit.</p>}
+      </div>
+    </div>
+  );
+}
+
 // Busca do YouTube: o embed listType=search foi descontinuado pelo Google e
 // falha sempre. Fallback honesto: vídeo fixo em destaque + nota ao usuário.
 // ─────────────────────────────────────────────────────────────
@@ -1293,10 +1350,7 @@ export default function BrowserShell() {
     }
     if (activeTab.type === "youtube") {
       return (
-        <YouTubeHome
-          onSearch={(term) => openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(term)}`, "🌐 Resultados abertos no YouTube")}
-          onToast={setToast}
-        />
+        <YouTubeRealHome onToast={setToast} />
       );
     }
     if (activeTab.type === "youtube-search") {

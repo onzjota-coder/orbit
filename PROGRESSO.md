@@ -1,1 +1,2 @@
 - 15/09: Polish visual + YouTube experimental + ROADMAP.md criado com 100 ideias
+- 15/09: YouTube Real com API oficial, thumbnails, player interno e exportação multi-formato
