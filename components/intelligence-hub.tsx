@@ -253,7 +253,7 @@ export default function IntelligenceHub({
               FLUX / Pollinations
             </h3>
             <p className="mt-1 flex-1 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-              cria imagens do zero
+              cria imagens do zero — grátis ✓
             </p>
             <button
               type="button"
@@ -261,6 +261,29 @@ export default function IntelligenceHub({
               className="mt-4 rounded-lg bg-zinc-900 px-3 py-2 text-[12.5px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
             >
               “faça uma imagem de X” →
+            </button>
+          </div>
+
+          {/* 💎 GPT-Image (OpenAI) — BYOK: máxima qualidade com a chave do usuário */}
+          <div className={`${cardBase} border-violet-500/40`}>
+            <div className="flex items-start justify-between">
+              <span className="text-3xl">💎</span>
+              <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-600 dark:border-violet-400/30 dark:text-violet-400">
+                BYOK
+              </span>
+            </div>
+            <h3 className="mt-3 font-display text-[15px] font-semibold text-zinc-900 dark:text-white">
+              GPT-Image (OpenAI)
+            </h3>
+            <p className="mt-1 flex-1 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              máxima qualidade — conecte sua chave ⚙️
+            </p>
+            <button
+              type="button"
+              onClick={onOpenOrbit}
+              className="mt-4 rounded-lg bg-zinc-900 px-3 py-2 text-[12.5px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+            >
+              Ativar no chat (/config) →
             </button>
           </div>
 

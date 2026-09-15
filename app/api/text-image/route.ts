@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 // ─────────────────────────────────────────────────────────────
 export async function POST(req: Request) {
   try {
-    const { prompt } = await req.json();
+    const { prompt, premium } = await req.json();
 
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
       return NextResponse.json({ error: "Descreva a imagem que você quer gerar." }, { status: 400 });
@@ -16,6 +16,51 @@ export async function POST(req: Request) {
     }
 
     const fullPrompt = `${prompt.trim()}, high quality, detailed`;
+
+    // ─────────────────────────────────────────────────────────
+    // BYOK — Bring Your Own Key (arquitetura premium opcional)
+    // Configure no .env.local (OPCIONAL — o gerador gratuito segue como padrão):
+    //   OPENAI_API_KEY=sk-...   (chave do usuário da OpenAI → 💎 GPT-Image)
+    // ─────────────────────────────────────────────────────────
+    const openaiKey = process.env.OPENAI_API_KEY;
+    let notice: string | undefined;
+
+    // PRIORIDADE 1: OpenAI (só quando o usuário ativou premium E a chave existe no servidor)
+    if (premium === true && openaiKey && openaiKey.length > 10) {
+      console.log("[ORBIT-IMG] provedor=openai");
+      try {
+        const res = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${openaiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ model: "gpt-image-1", prompt: fullPrompt, size: "1024x1024", n: 1 }),
+          signal: AbortSignal.timeout(120_000),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const b64 = data?.data?.[0]?.b64_json;
+          if (b64) {
+            console.log("[ORBIT-IMG] ✅ imagem gerada pela OpenAI (gpt-image-1)");
+            return NextResponse.json({ imageDataUrl: `data:image/png;base64,${b64}`, provider: "openai" });
+          }
+          console.error("[ORBIT-IMG] OpenAI respondeu sem b64_json → caindo para Pollinations");
+        } else {
+          // 401 = chave inválida · 429 = cota esgotada → fallback automático
+          console.error(`[ORBIT-IMG] OpenAI falhou (status ${res.status}) → caindo para Pollinations`);
+        }
+      } catch (e) {
+        console.error("[ORBIT-IMG] OpenAI indisponível (rede/timeout) → caindo para Pollinations", e);
+      }
+    } else if (premium === true) {
+      notice = "⚠️ Nenhuma OPENAI_API_KEY configurada no servidor — usando gerador gratuito";
+      console.log("[ORBIT-IMG] premium pedido, mas sem OPENAI_API_KEY no servidor → Pollinations");
+    }
+
+    // PRIORIDADE 2 (padrão/grátis): Pollinations com retry
+    console.log("[ORBIT-IMG] provedor=pollinations");
 
     // RETRY: 3 tentativas — o Pollinations é instável
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -41,7 +86,7 @@ export async function POST(req: Request) {
           const mime = res.headers.get("content-type")?.startsWith("image/")
             ? res.headers.get("content-type")!
             : "image/jpeg";
-          return NextResponse.json({ imageDataUrl: `data:${mime};base64,${b64}` });
+          return NextResponse.json({ imageDataUrl: `data:${mime};base64,${b64}`, provider: "pollinations", ...(notice ? { notice } : {}) });
         }
         console.warn(`⚠️ Tentativa ${attempt}: resposta curta (${buffer.byteLength} bytes) — repetindo`);
       } else {
@@ -54,7 +99,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { error: "O gerador está ocupado. Tente novamente em 1 minuto." },
+      { error: "O gerador está ocupado. Tente novamente em 1 minuto.", ...(notice ? { notice } : {}) },
       { status: 502 }
     );
   } catch {

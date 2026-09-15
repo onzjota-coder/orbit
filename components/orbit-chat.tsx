@@ -89,8 +89,28 @@ export default function OrbitChat() {
   const [highUseDismissed, setHighUseDismissed] = useState(false);
   // Tarefa 9.1 — índice da mensagem recém-copiada (✓ por 1,5s)
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  // 💎 BYOK — qualidade de imagem premium (preferência em localStorage "orbit_premium_image")
+  const [premiumImage, setPremiumImage] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Carrega a preferência premium ao montar
+  useEffect(() => {
+    try {
+      setPremiumImage(localStorage.getItem("orbit_premium_image") === "true");
+    } catch {}
+  }, []);
+
+  function togglePremiumImage() {
+    setPremiumImage((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("orbit_premium_image", String(next));
+      } catch {}
+      return next;
+    });
+  }
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -250,6 +270,14 @@ export default function OrbitChat() {
     const text = input.trim();
     if ((!text && !image) || loading) return;
 
+    // 💎 /config → abre as configurações do chat (inclui "Qualidade de imagem")
+    if (text === "/config") {
+      setMessages((m) => [...m, { role: "user", text }, { role: "orbit", text: "⚙️ Configurações abertas acima. Toque no interruptor 💎 para alternar a qualidade das imagens geradas por texto." }]);
+      setInput("");
+      setShowSettings(true);
+      return;
+    }
+
     // ── FLUXO 0: geração de imagem por TEXTO ("faça/gere/crie/desenhe uma imagem/foto de X") ──
     const imgCmd = text.match(/^(fa[çc]a|gere|crie|desenhe)\s+(uma\s+|um\s+)?(imagem|foto)\s+/i);
     if (imgCmd) {
@@ -264,22 +292,25 @@ export default function OrbitChat() {
       setMessages((m) => [...m, { role: "user", text }]);
       setInput("");
       setLoading(true);
-      setMessages((m) => [...m, { role: "orbit", text: "🎨 Gerando sua imagem…" }]);
+      setMessages((m) => [...m, { role: "orbit", text: premiumImage ? "💎 Gerando sua imagem em qualidade premium…" : "🎨 Gerando sua imagem…" }]);
       try {
         const res = await fetch("/api/text-image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: theme }),
+          body: JSON.stringify({ prompt: theme, premium: premiumImage }),
         });
         const data = await res.json();
         if (data.imageDataUrl) {
+          const label = data.provider === "openai" ? "💎 GPT-Image" : "🌸 Pollinations (grátis)";
           setMessages((m) => [
             ...m,
-            { role: "orbit", text: `🎨 Aqui está sua imagem de ${theme}! Clique nela para baixar.`, image: data.imageDataUrl },
+            ...(data.notice ? [{ role: "orbit" as const, text: data.notice }] : []),
+            { role: "orbit", text: `🎨 Aqui está sua imagem de ${theme}! (${label}) Clique nela para baixar.`, image: data.imageDataUrl },
           ]);
         } else {
           setMessages((m) => [
             ...m,
+            ...(data.notice ? [{ role: "orbit" as const, text: data.notice }] : []),
             { role: "orbit", text: data.error ?? "Não consegui gerar a imagem agora. Tente novamente." },
           ]);
         }
@@ -491,6 +522,20 @@ export default function OrbitChat() {
         <div className="flex items-center gap-3">
           <button
             type="button"
+            onClick={() => setShowSettings((s) => !s)}
+            aria-expanded={showSettings}
+            aria-label="Configurações do chat"
+            title="Configurações (/config)"
+            className={`flex h-7 w-7 items-center justify-center rounded-lg text-sm transition ${
+              showSettings
+                ? "bg-zinc-100 text-zinc-900 dark:bg-white/10 dark:text-white"
+                : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/[0.06] dark:hover:text-white"
+            }`}
+          >
+            ⚙️
+          </button>
+          <button
+            type="button"
             onClick={exportConversation}
             aria-label="Exportar conversa"
             title="Exportar conversa (.txt)"
@@ -517,6 +562,41 @@ export default function OrbitChat() {
           )}
         </div>
       </div>
+
+      {/* ⚙️ Configurações do chat (abre pelo botão ⚙️ ou comando /config) */}
+      {showSettings && (
+        <div className="border-b border-zinc-200 bg-zinc-50 px-5 py-3.5 dark:border-white/[0.06] dark:bg-white/[0.03]">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-400 dark:text-zinc-600">
+            Configurações
+          </p>
+          {/* 💎 Qualidade de imagem */}
+          <div className="mt-2.5 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[13px] font-medium text-zinc-700 dark:text-zinc-200">
+                💎 Qualidade de imagem — Usar API OpenAI (sua chave)
+              </p>
+              <p className="text-[11.5px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+                Precisa de OPENAI_API_KEY no servidor. Sem ela, caímos no gerador gratuito.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={premiumImage}
+              onClick={togglePremiumImage}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                premiumImage ? "bg-violet-600" : "bg-zinc-300 dark:bg-white/15"
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                  premiumImage ? "left-[22px]" : "left-0.5"
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Mensagens */}
       <div ref={boxRef} className="scroll-slim min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-6">
