@@ -573,11 +573,13 @@ function FrameSpinner() {
 // MELHORIA 3 — iframe com spinner + timeout de 8s → fallback elegante
 // ─────────────────────────────────────────────────────────────
 function GuardedFrame({
+  tabId,
   url,
   title,
   reloadKey,
   ghost,
 }: {
+  tabId: string;
   url: string;
   title: string;
   reloadKey: number;
@@ -610,7 +612,7 @@ function GuardedFrame({
     <div className="relative h-full w-full bg-white">
       {status === "loading" && spinnerVisible && <FrameSpinner />}
       <iframe
-        key={`${url}-${reloadKey}`}
+        key={`${tabId}-${url}-${reloadKey}`}
         src={url}
         title={title}
         onLoad={() => setStatus("ok")}
@@ -1336,7 +1338,7 @@ export default function BrowserShell() {
     if (activeTab.type === "orbit-chat") {
       return (
         <div className="h-full px-4 py-4">
-          <OrbitChat />
+          <OrbitChat onToast={setToast} />
         </div>
       );
     }
@@ -1348,11 +1350,11 @@ export default function BrowserShell() {
     }
     if (activeTab.type === "youtube") {
       return (
-        <YouTubeRealHome onToast={setToast} />
+        <YouTubeRealHome key={activeTab.id} onToast={setToast} />
       );
     }
     if (activeTab.type === "youtube-search") {
-      return <YouTubeSearchFallback term={activeTab.url ?? ""} />;
+      return <YouTubeSearchFallback key={activeTab.id} term={activeTab.url ?? ""} />;
     }
     // TAREFA 17 — Arena Multi-IA
     if (activeTab.type === "arena") {
@@ -1392,6 +1394,8 @@ export default function BrowserShell() {
     // TAREFA 22 — erro estilizado (🛰️ Sinal perdido) com Recarregar / Abrir fora
     return (
       <GuardedFrame
+        key={activeTab.id}
+        tabId={activeTab.id}
         url={url}
         title={activeTab.title}
         reloadKey={reloadKey}

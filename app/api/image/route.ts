@@ -15,7 +15,9 @@ const GEMINI_KEYS = [
 ].filter((k): k is string => typeof k === "string" && k.length > 10);
 
 if (typeof window === "undefined") {
-  console.log(`🔑 Pool de chaves Gemini: ${GEMINI_KEYS.length} chave(s) carregada(s)`);
+  console.log(
+    `🔑 Pool de chaves Gemini: ${GEMINI_KEYS.length} chave(s) carregada(s)`,
+  );
 }
 
 let keyIndex = 0;
@@ -61,17 +63,25 @@ function extractImage(data: unknown): { dataUrl: string } | null {
   const parts = d?.candidates?.[0]?.content?.parts ?? [];
   for (const p of parts) {
     if (p.inlineData?.data) {
-      return { dataUrl: `data:${p.inlineData.mimeType ?? "image/png"};base64,${p.inlineData.data}` };
+      return {
+        dataUrl: `data:${p.inlineData.mimeType ?? "image/png"};base64,${p.inlineData.data}`,
+      };
     }
     if (p.inline_data?.data) {
-      return { dataUrl: `data:${p.inline_data.mime_type ?? "image/png"};base64,${p.inline_data.data}` };
+      return {
+        dataUrl: `data:${p.inline_data.mime_type ?? "image/png"};base64,${p.inline_data.data}`,
+      };
     }
   }
   return null;
 }
 
 // ── Provedor 1: Google (edita a foto original — mantém o produto real) ──
-async function tryGemini(imageBase64: string, mimeType: string, styleText: string): Promise<string | null> {
+async function tryGemini(
+  imageBase64: string,
+  mimeType: string,
+  styleText: string,
+): Promise<string | null> {
   const body = JSON.stringify({
     contents: [
       {
@@ -101,7 +111,7 @@ async function tryGemini(imageBase64: string, mimeType: string, styleText: strin
               "x-goog-api-key": key,
             },
             body,
-          }
+          },
         );
 
         if (res.ok) {
@@ -116,7 +126,10 @@ async function tryGemini(imageBase64: string, mimeType: string, styleText: strin
         }
 
         const errText = await res.text();
-        console.error(`❌ Gemini ${model} chave=#${k + 1}: ${res.status}`, errText.slice(0, 200));
+        console.error(
+          `❌ Gemini ${model} chave=#${k + 1}: ${res.status}`,
+          errText.slice(0, 200),
+        );
         lastGeminiError = `${res.status}`;
         if (res.status === 400 || res.status === 403) break;
       } catch (e) {
@@ -128,10 +141,52 @@ async function tryGemini(imageBase64: string, mimeType: string, styleText: strin
   return null;
 }
 
+async function tryGeminiPrompt(prompt: string): Promise<string | null> {
+  for (const model of IMAGE_MODELS) {
+    for (let k = 0; k < GEMINI_KEYS.length; k++) {
+      const key = getNextKey();
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-goog-api-key": key,
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  role: "user",
+                  parts: [
+                    {
+                      text: `Gere esta imagem: ${prompt}. Alta qualidade, composição profissional.`,
+                    },
+                  ],
+                },
+              ],
+              generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+            }),
+          },
+        );
+        if (res.ok) {
+          const image = extractImage(await res.json());
+          if (image) return image.dataUrl;
+        }
+      } catch {}
+    }
+  }
+  return null;
+}
+
 // ── Provedor 2: Pollinations (100% grátis, sem chave, SEM COTA) ──
 // Recebe productHint = descrição do produto (em inglês) para o prompt nunca ficar genérico
-async function tryPollinations(productHint: string, styleText: string): Promise<string | null> {
-  let prompt = productHint && productHint.trim().length > 3 ? productHint.trim() : "";
+async function tryPollinations(
+  productHint: string,
+  styleText: string,
+): Promise<string | null> {
+  let prompt =
+    productHint && productHint.trim().length > 3 ? productHint.trim() : "";
   if (!prompt) prompt = "professional product photography";
   // Negative prompt automático — mesmo padrão da rota text-image
   prompt = `${prompt}, ${styleText}. ${NEGATIVE}`;
@@ -143,7 +198,10 @@ async function tryPollinations(productHint: string, styleText: string): Promise<
   const res = await fetch(url, { method: "GET" });
 
   if (!res.ok) {
-    console.error(`❌ Pollinations (${res.status}):`, (await res.text()).slice(0, 200));
+    console.error(
+      `❌ Pollinations (${res.status}):`,
+      (await res.text()).slice(0, 200),
+    );
     return null;
   }
 
@@ -166,7 +224,27 @@ async function tryPollinations(productHint: string, styleText: string): Promise<
 
 export async function POST(req: Request) {
   try {
-    const { imageBase64, mimeType, style, productContext } = await req.json();
+    const { imageBase64, mimeType, style, productContext, prompt } =
+      await req.json();
+
+    if (typeof prompt === "string" && prompt.trim()) {
+      const geminiResult = await tryGeminiPrompt(prompt.trim());
+      if (geminiResult)
+        return NextResponse.json({
+          imageDataUrl: geminiResult,
+          provider: "gemini",
+        });
+      const polliResult = await tryPollinations(prompt.trim(), STYLES["3"]);
+      if (polliResult)
+        return NextResponse.json({
+          imageDataUrl: polliResult,
+          provider: "pollinations",
+        });
+      return NextResponse.json(
+        { error: "Os geradores de imagem estão indisponíveis agora." },
+        { status: 502 },
+      );
+    }
 
     if (!imageBase64 || typeof imageBase64 !== "string") {
       return NextResponse.json({ error: "Imagem ausente." }, { status: 400 });
@@ -176,13 +254,22 @@ export async function POST(req: Request) {
     const styleText = STYLES[styleKey];
 
     // Estratégia 1: Google edita a foto original (ideal — mantém o produto real)
-    const geminiResult = await tryGemini(imageBase64, mimeType ?? "image/png", styleText);
+    const geminiResult = await tryGemini(
+      imageBase64,
+      mimeType ?? "image/png",
+      styleText,
+    );
     if (geminiResult) {
-      return NextResponse.json({ imageDataUrl: geminiResult, provider: "gemini" });
+      return NextResponse.json({
+        imageDataUrl: geminiResult,
+        provider: "gemini",
+      });
     }
 
     // Estratégia 2: Pollinations (grátis, sempre disponível)
-    console.log(`↪️ Gemini indisponível (${lastGeminiError}). Tentando Pollinations...`);
+    console.log(
+      `↪️ Gemini indisponível (${lastGeminiError}). Tentando Pollinations...`,
+    );
 
     // Descrição do produto — da fonte mais barata para a mais cara:
     // Camada 1: contexto da conversa (GRÁTIS — o Orbit já identificou o produto!)
@@ -190,7 +277,10 @@ export async function POST(req: Request) {
     // Camada 3: extração de palavras do contexto SEM IA (zero custo)
     let productHint = "";
 
-    if (typeof productContext === "string" && productContext.trim().length > 20) {
+    if (
+      typeof productContext === "string" &&
+      productContext.trim().length > 20
+    ) {
       // Camada 2: Gemini resume o contexto da conversa
       try {
         const hintRes = await fetch(
@@ -213,13 +303,15 @@ export async function POST(req: Request) {
                 },
               ],
             }),
-          }
+          },
         );
 
         if (hintRes.ok) {
           const hd = await hintRes.json();
           const reply =
-            hd?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+            hd?.candidates?.[0]?.content?.parts
+              ?.map((p: { text?: string }) => p.text ?? "")
+              .join("") ?? "";
           if (reply && !reply.toLowerCase().includes("none")) {
             productHint = reply.trim();
           }
@@ -240,18 +332,24 @@ export async function POST(req: Request) {
       }
     }
 
-    console.log("📦 Produto identificado:", productHint || "(não identificado — usando genérico)");
+    console.log(
+      "📦 Produto identificado:",
+      productHint || "(não identificado — usando genérico)",
+    );
 
     const polliResult = await tryPollinations(productHint, styleText);
     if (polliResult) {
-      return NextResponse.json({ imageDataUrl: polliResult, provider: "pollinations" });
+      return NextResponse.json({
+        imageDataUrl: polliResult,
+        provider: "pollinations",
+      });
     }
 
     return NextResponse.json(
       {
         error: `Os geradores de imagem estão indisponíveis agora (Google: ${lastGeminiError}). Aguarde alguns minutos e tente novamente.`,
       },
-      { status: 502 }
+      { status: 502 },
     );
   } catch {
     return NextResponse.json({ error: "Erro inesperado." }, { status: 500 });

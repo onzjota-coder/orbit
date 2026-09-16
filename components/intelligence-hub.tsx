@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { readOrbitModel, setOrbitModel } from "@/lib/orbit-model";
 
 // ─────────────────────────────────────────────────────────────
 // HUB DE INTELIGÊNCIAS — conexão com TODAS as IAs.
@@ -12,17 +13,76 @@ import { useEffect, useState } from "react";
 
 const NOTIFY_KEY = "orbit_notify";
 
-type ExternalSite = { id: string; icon: string; name: string; spec: string; url: string; integrated?: boolean };
+type HubModel = {
+  id: string;
+  name: string;
+  family: string;
+  context: number | null;
+  free: boolean;
+};
+type ExternalSite = {
+  id: string;
+  icon: string;
+  name: string;
+  spec: string;
+  url: string;
+  integrated?: boolean;
+  candidates?: string[];
+};
 
 // integrated = true → o Orbit já conversa com esse provedor via API no backend
 // (Gemini via lib/gemini_keys.ts; OpenAI BYOK → 💎 GPT-Image; Pollinations → 🌸)
 const EXTERNAL_SITES: ExternalSite[] = [
-  { id: "chatgpt", icon: "🤖", name: "ChatGPT (OpenAI)", spec: "GPT-6 Astra e família", url: "https://chatgpt.com" },
-  { id: "gemini", icon: "✨", name: "Google Gemini", spec: "multimodal, 1M contexto — já responde no chat via API", url: "https://gemini.google.com", integrated: true },
-  { id: "claude", icon: "🧠", name: "Claude", spec: "textos longos e raciocínio", url: "https://claude.ai" },
-  { id: "deepseek", icon: "🐋", name: "DeepSeek", spec: "raciocínio e código FREE", url: "https://chat.deepseek.com" },
-  { id: "zai", icon: "⚡", name: "Z.ai (GLM)", spec: "agente e código", url: "https://chat.z.ai" },
-  { id: "copilot", icon: "💠", name: "Microsoft Copilot", spec: "IA da Microsoft", url: "https://copilot.microsoft.com" },
+  {
+    id: "chatgpt",
+    icon: "🤖",
+    name: "ChatGPT (OpenAI)",
+    spec: "responde dentro do Orbit via OpenRouter",
+    url: "https://chatgpt.com",
+    candidates: ["openai/gpt-5", "openai/gpt-4.1"],
+  },
+  {
+    id: "gemini",
+    icon: "✨",
+    name: "Google Gemini",
+    spec: "multimodal, 1M contexto — já responde no chat via API",
+    url: "https://gemini.google.com",
+    integrated: true,
+  },
+  {
+    id: "claude",
+    icon: "🧠",
+    name: "Claude",
+    spec: "textos longos e raciocínio via OpenRouter",
+    url: "https://claude.ai",
+    candidates: ["anthropic/claude-opus-5", "anthropic/claude-sonnet-4"],
+  },
+  {
+    id: "deepseek",
+    icon: "🐋",
+    name: "DeepSeek",
+    spec: "raciocínio e código via OpenRouter",
+    url: "https://chat.deepseek.com",
+    candidates: [
+      "deepseek/deepseek-chat-v4.1-flash:free",
+      "deepseek/deepseek-v3.2",
+    ],
+  },
+  {
+    id: "zai",
+    icon: "⚡",
+    name: "Z.ai (GLM)",
+    spec: "agente e código via OpenRouter",
+    url: "https://chat.z.ai",
+    candidates: ["z-ai/glm-5.3-flash:free", "z-ai/glm-4.5"],
+  },
+  {
+    id: "copilot",
+    icon: "💠",
+    name: "Microsoft Copilot",
+    spec: "IA da Microsoft",
+    url: "https://copilot.microsoft.com",
+  },
 ];
 
 const EM_BREVE = [
@@ -46,8 +106,20 @@ const badgeOpen = (
   </span>
 );
 
-export default function IntelligenceHub({ onOpenOrbit }: { onOpenOrbit: () => void }) {
+export default function IntelligenceHub({
+  onOpenOrbit,
+}: {
+  onOpenOrbit: () => void;
+}) {
   const [notify, setNotify] = useState<string[]>([]);
+  const [openrouter, setOpenrouter] = useState<{
+    keys: number;
+    models: HubModel[];
+  } | null>(null);
+  const [activeModel, setActiveModel] = useState("");
+  const [openrouterConnected, setOpenrouterConnected] = useState<
+    boolean | null
+  >(null);
 
   useEffect(() => {
     try {
@@ -57,6 +129,45 @@ export default function IntelligenceHub({ onOpenOrbit }: { onOpenOrbit: () => vo
       // storage corrompido → começa vazio
     }
   }, []);
+
+  useEffect(() => {
+    setActiveModel(readOrbitModel());
+    let alive = true;
+    fetch("/api/chat/openrouter")
+      .then((response) => response.json())
+      .then(
+        (data: { available?: boolean; keys?: number; models?: HubModel[] }) => {
+          if (alive && data.available && Array.isArray(data.models)) {
+            setOpenrouter({ keys: data.keys ?? 1, models: data.models });
+          }
+        },
+      )
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/status/openrouter")
+      .then((response) => response.json())
+      .then((data: { connected?: boolean }) =>
+        setOpenrouterConnected(data.connected === true),
+      )
+      .catch(() => setOpenrouterConnected(false));
+  }, []);
+
+  function modelForSite(site: ExternalSite): string {
+    if (!openrouter || !site.candidates) return "";
+    const available = new Set(openrouter.models.map((model) => model.id));
+    return site.candidates.find((candidate) => available.has(candidate)) ?? "";
+  }
+
+  function chooseModel(model: string, open = false) {
+    setOrbitModel(model);
+    setActiveModel(model);
+    if (open) onOpenOrbit();
+  }
 
   function notifyMe(id: string) {
     if (notify.includes(id)) return;
@@ -77,8 +188,8 @@ export default function IntelligenceHub({ onOpenOrbit }: { onOpenOrbit: () => vo
             🧠 Inteligências
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
-            Provedores com API respondem dentro do Orbit. Os demais abrem em nova aba — sem testes de iframe que os
-            sites bloqueiam de propósito.
+            Provedores com API respondem dentro do Orbit. Os demais abrem em
+            nova aba — sem testes de iframe que os sites bloqueiam de propósito.
           </p>
         </div>
 
@@ -105,27 +216,44 @@ export default function IntelligenceHub({ onOpenOrbit }: { onOpenOrbit: () => vo
           </div>
 
           {/* Cards de sites de IA — SEM iframe/teste: window.open direto */}
-          {EXTERNAL_SITES.map((site) => (
-            <div key={site.id} className={`${cardBase} border-zinc-200 dark:border-white/10`}>
-              <div className="flex items-start justify-between">
-                <span className="text-3xl">{site.icon}</span>
-                {site.integrated ? badgeApi : badgeOpen}
-              </div>
-              <h3 className="mt-3 font-display text-[15px] font-semibold text-zinc-900 dark:text-white">
-                {site.name}
-              </h3>
-              <p className="mt-1 flex-1 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                {site.spec}
-              </p>
-              <button
-                type="button"
-                onClick={() => window.open(site.url, "_blank", "noopener,noreferrer")}
-                className="mt-4 rounded-lg bg-zinc-900 px-3 py-2 text-[12.5px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+          {EXTERNAL_SITES.map((site) => {
+            const model = modelForSite(site);
+            const integrated = Boolean(site.integrated) || Boolean(model);
+            return (
+              <div
+                key={site.id}
+                className={`${cardBase} border-zinc-200 dark:border-white/10`}
               >
-                🔗 Abrir em nova aba →
-              </button>
-            </div>
-          ))}
+                <div className="flex items-start justify-between">
+                  <span className="text-3xl">{site.icon}</span>
+                  {integrated ? badgeApi : badgeOpen}
+                </div>
+                <h3 className="mt-3 font-display text-[15px] font-semibold text-zinc-900 dark:text-white">
+                  {site.name}
+                </h3>
+                <p className="mt-1 flex-1 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  {site.spec}
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    integrated
+                      ? site.integrated
+                        ? onOpenOrbit()
+                        : chooseModel(model, true)
+                      : window.open(site.url, "_blank", "noopener,noreferrer")
+                  }
+                  className="mt-4 rounded-lg bg-zinc-900 px-3 py-2 text-[12.5px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+                >
+                  {integrated
+                    ? site.integrated
+                      ? "Falar no chat →"
+                      : `Usar no chat (${model.split("/").pop()}) →`
+                    : "🔗 Abrir em nova aba →"}
+                </button>
+              </div>
+            );
+          })}
 
           {/* 🖼️ Nano Banana — já fala com nossa API (visão + imagem) */}
           <div className={`${cardBase} border-zinc-200 dark:border-white/10`}>
@@ -133,7 +261,9 @@ export default function IntelligenceHub({ onOpenOrbit }: { onOpenOrbit: () => vo
               <span className="text-3xl">🖼️</span>
               {badgeApi}
             </div>
-            <h3 className="mt-3 font-display text-[15px] font-semibold text-zinc-900 dark:text-white">Nano Banana</h3>
+            <h3 className="mt-3 font-display text-[15px] font-semibold text-zinc-900 dark:text-white">
+              Nano Banana
+            </h3>
             <p className="mt-1 flex-1 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
               edição de imagens
             </p>
@@ -189,22 +319,91 @@ export default function IntelligenceHub({ onOpenOrbit }: { onOpenOrbit: () => vo
           </div>
 
           {/* ⚙️ Conectar OpenRouter */}
-          <div className="flex flex-col rounded-xl border border-dashed border-zinc-300 bg-white p-5 dark:border-white/15 dark:bg-[#101014]">
+          <div
+            className={`flex flex-col rounded-xl border p-5 dark:bg-[#101014] ${
+              openrouterConnected === true
+                ? "border-emerald-500/30 bg-emerald-500/[0.04]"
+                : "border-dashed border-zinc-300 bg-white dark:border-white/15"
+            }`}
+          >
             <span className="text-3xl">⚙️</span>
             <h3 className="mt-3 font-display text-[15px] font-semibold text-zinc-900 dark:text-white">
               Conectar OpenRouter
             </h3>
             <p className="mt-1 flex-1 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-              Adicione{" "}
-              <code className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-white/10">OPENROUTER_API_KEY</code> no{" "}
-              <code className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-white/10">.env</code> para liberar
-              DeepSeek, Llama e Qwen via API dentro do chat do Orbit.
+              {openrouterConnected === true ? (
+                "OpenRouter conectado. Os modelos disponíveis aparecem no seletor do chat."
+              ) : (
+                <>
+                  Adicione{" "}
+                  <code className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-white/10">
+                    OPENROUTER_API_KEY
+                  </code>{" "}
+                  no{" "}
+                  <code className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-white/10">
+                    .env
+                  </code>{" "}
+                  para liberar DeepSeek, Llama e Qwen via API dentro do chat do
+                  Orbit.
+                </>
+              )}
             </p>
-            <span className="mt-4 rounded-full border border-zinc-300 px-2 py-0.5 text-center text-[10px] font-medium text-zinc-400 dark:border-white/10 dark:text-zinc-500">
-              integração planejada
-            </span>
+            {openrouterConnected === true ? (
+              <button
+                type="button"
+                onClick={() =>
+                  document.getElementById("orbit-model-select")?.focus()
+                }
+                className="mt-4 rounded-lg bg-zinc-900 px-3 py-2 text-center text-[12px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+              >
+                Conectado — escolher modelo →
+              </button>
+            ) : (
+              <span className="mt-4 rounded-full border border-zinc-300 px-2 py-0.5 text-center text-[10px] font-medium text-zinc-400 dark:border-white/10 dark:text-zinc-500">
+                integração planejada
+              </span>
+            )}
           </div>
         </div>
+
+        {openrouter && (
+          <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-5 dark:border-white/10 dark:bg-[#101014]">
+            <label
+              htmlFor="orbit-model-select"
+              className="text-[13px] font-semibold text-zinc-900 dark:text-white"
+            >
+              🧠 Modelo do chat
+            </label>
+            <p className="mt-1 text-[12px] text-zinc-500 dark:text-zinc-400">
+              Vale para as próximas mensagens do Orbit.
+            </p>
+            <select
+              id="orbit-model-select"
+              value={activeModel}
+              onChange={(event) => chooseModel(event.target.value)}
+              className="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-[13px] text-zinc-900 dark:border-white/15 dark:bg-[#0C0C0F] dark:text-zinc-100"
+            >
+              <option value="">🪐 Gemini nativo (grátis)</option>
+              {openrouter.models
+                .filter((model) =>
+                  ["openai", "anthropic", "deepseek", "z-ai"].includes(
+                    model.family,
+                  ),
+                )
+                .map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name}
+                    {model.free ? " · grátis" : ""}
+                  </option>
+                ))}
+            </select>
+            <p className="mt-2 text-[11.5px] text-zinc-400 dark:text-zinc-500">
+              {activeModel
+                ? `Ativo: ${activeModel} — via OpenRouter.`
+                : "Gemini nativo — padrão."}
+            </p>
+          </div>
+        )}
 
         {/* EM BREVE */}
         <div className="mt-10">
@@ -221,7 +420,9 @@ export default function IntelligenceHub({ onOpenOrbit }: { onOpenOrbit: () => vo
                 <h4 className="mt-2 font-display text-[14px] font-semibold text-zinc-600 dark:text-zinc-300">
                   {s.name}
                 </h4>
-                <p className="text-[12px] text-zinc-400 dark:text-zinc-500">{s.spec}</p>
+                <p className="text-[12px] text-zinc-400 dark:text-zinc-500">
+                  {s.spec}
+                </p>
                 <button
                   type="button"
                   onClick={() => notifyMe(s.id)}
@@ -235,7 +436,6 @@ export default function IntelligenceHub({ onOpenOrbit }: { onOpenOrbit: () => vo
           </div>
         </div>
       </div>
-
     </div>
   );
 }

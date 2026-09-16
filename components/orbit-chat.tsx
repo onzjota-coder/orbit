@@ -3,12 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
 import Logo from "./logo";
+import {
+  ORBIT_MODEL_EVENT,
+  orbitModelFamily,
+  readOrbitModel,
+  setOrbitModel,
+} from "@/lib/orbit-model";
 
 const HISTORY_KEY = "orbit_chat_history";
 const HISTORY_MAX = 50;
 
 type DocumentAttachment = { content: string; request: string };
-type Msg = { role: "user" | "orbit"; text: string; image?: string; document?: DocumentAttachment };
+type Msg = {
+  role: "user" | "orbit";
+  text: string;
+  image?: string;
+  document?: DocumentAttachment;
+};
 
 // Boas-vindas como constante estável: usada para NÃO enviar a saudação
 // como histórico da IA nem reexibi-la quando há conversa salva.
@@ -19,8 +30,14 @@ const WELCOME: Msg = {
 
 // Chips de sugestão (Tarefa 9.2) — exibidos enquanto a conversa está no início
 const SUGGESTIONS: { label: string; fill: string }[] = [
-  { label: "Anunciar produto", fill: "Quero anunciar um produto no Mercado Livre: " },
-  { label: "Fluxo UGC TikTok", fill: "Crie um roteiro de vídeo UGC para TikTok do meu produto: " },
+  {
+    label: "Anunciar produto",
+    fill: "Quero anunciar um produto no Mercado Livre: ",
+  },
+  {
+    label: "Fluxo UGC TikTok",
+    fill: "Crie um roteiro de vídeo UGC para TikTok do meu produto: ",
+  },
   { label: "Criar documento", fill: "Crie um documento estruturado sobre " },
   { label: "Gerar imagem", fill: "faça uma imagem de " },
   { label: "Me ensine algo", fill: "Me ensine algo interessante sobre " },
@@ -37,22 +54,37 @@ function getUsage(): number {
 
 function bumpUsage(): number {
   const count = getUsage() + 1;
-  localStorage.setItem("orbit_usage", JSON.stringify({ date: new Date().toDateString(), count }));
+  localStorage.setItem(
+    "orbit_usage",
+    JSON.stringify({ date: new Date().toDateString(), count }),
+  );
   return count;
 }
 
 function downloadDocumentPdf(content: string, request: string) {
   function sanitizePdfText(value: string) {
-    return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[Ã¡Ã Ã£Ã¢Ã¤]/gi, "a").replace(/[Ã©ÃªÃ«]/gi, "e").replace(/[Ã­Ã¯]/gi, "i").replace(/[Ã³ÃµÃ´Ã¶]/gi, "o").replace(/[ÃºÃ¼]/gi, "u").replace(/[Ã§]/gi, "c");
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[Ã¡Ã Ã£Ã¢Ã¤]/gi, "a")
+      .replace(/[Ã©ÃªÃ«]/gi, "e")
+      .replace(/[Ã­Ã¯]/gi, "i")
+      .replace(/[Ã³ÃµÃ´Ã¶]/gi, "o")
+      .replace(/[ÃºÃ¼]/gi, "u")
+      .replace(/[Ã§]/gi, "c");
   }
   const pdf = new jsPDF({ unit: "mm", format: "a4" });
   const margin = 18;
   const width = 210 - margin * 2;
   const height = 297 - margin;
   let y = 22;
-  const lines = pdf.splitTextToSize(sanitizePdfText(content), width) as string[];
+  const lines = pdf.splitTextToSize(
+    sanitizePdfText(content),
+    width,
+  ) as string[];
   for (const line of lines) {
-    const isHeading = /^[A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9][A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9 .:/-]{3,}$/.test(line.trim());
+    const isHeading =
+      /^[A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9][A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9 .:/-]{3,}$/.test(line.trim());
     pdf.setFont("helvetica", isHeading ? "bold" : "normal");
     pdf.setFontSize(isHeading ? 14 : 11);
     if (y > height) {
@@ -69,24 +101,54 @@ function downloadDocumentPdf(content: string, request: string) {
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
   pdf.setTextColor(130, 130, 130);
-  pdf.text(`Gerado por Orbit 🪐 — ${new Date().toLocaleDateString("pt-BR")}`, margin, y + 4);
+  pdf.text(
+    `Gerado por Orbit 🪐 — ${new Date().toLocaleDateString("pt-BR")}`,
+    margin,
+    y + 4,
+  );
   pdf.setTextColor(0, 0, 0);
-  const slug = request.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").slice(0, 48) || "documento";
+  const slug =
+    request
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 48) || "documento";
   pdf.save(`orbit-${slug}.pdf`);
 }
 
 function documentSlug(request: string) {
-  return request.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").slice(0, 48) || "documento";
+  return (
+    request
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/gi, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 48) || "documento"
+  );
 }
 
 function documentHtml(content: string) {
-  const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;");
-  return content.split(/\r?\n/).map((line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return "<p>&nbsp;</p>";
-    if (/^#{1,2}\s|^[A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9][A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9 .:/-]{3,}$/.test(trimmed)) return `<h2>${escape(trimmed.replace(/^#+\s*/, ""))}</h2>`;
-    return `<p>${escape(line)}</p>`;
-  }).join("\n");
+  const escape = (value: string) =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;");
+  return content
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return "<p>&nbsp;</p>";
+      if (
+        /^#{1,2}\s|^[A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9][A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9 .:/-]{3,}$/.test(
+          trimmed,
+        )
+      )
+        return `<h2>${escape(trimmed.replace(/^#+\s*/, ""))}</h2>`;
+      return `<p>${escape(line)}</p>`;
+    })
+    .join("\n");
 }
 
 function triggerDownload(blob: Blob, filename: string) {
@@ -98,25 +160,57 @@ function triggerDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function downloadDocumentDocx(content: string, request: string) {
-  const htmlContent = documentHtml(content);
-  const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:'Times New Roman';font-size:12pt}h2{font-size:16pt}p{margin:0 0 10pt}</style></head><body>${htmlContent}</body></html>`;
-  triggerDownload(new Blob([html], { type: "application/msword" }), `orbit-${documentSlug(request)}.doc`);
+async function downloadDocumentDocx(content: string, request: string) {
+  const { AlignmentType, Document, Packer, Paragraph, TextRun } =
+    await import("docx");
+  const lines = content.split(/\r?\n/).map((line) => line.trim());
+  const title = lines.shift() || request.trim();
+  const children = [
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 300 },
+      children: [new TextRun({ text: title, bold: true, size: 32 })],
+    }),
+    ...lines.map(
+      (line) =>
+        new Paragraph({
+          spacing: { after: 180 },
+          children: [
+            new TextRun({
+              text: line,
+              bold: /^[A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9][A-ZÁÀÃÂÇÉÊÍÓÔÕÚÜ0-9 .:/-]{3,}$/.test(
+                line,
+              ),
+            }),
+          ],
+        }),
+    ),
+  ];
+  const blob = await Packer.toBlob(new Document({ sections: [{ children }] }));
+  triggerDownload(blob, `orbit-${documentSlug(request)}.docx`);
 }
 
 function downloadDocumentTxt(content: string, request: string) {
-  triggerDownload(new Blob([content], { type: "text/plain;charset=utf-8" }), `orbit-${documentSlug(request)}.txt`);
+  triggerDownload(
+    new Blob([content], { type: "text/plain;charset=utf-8" }),
+    `orbit-${documentSlug(request)}.txt`,
+  );
 }
 
 function downloadDocumentHtml(content: string, request: string) {
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${documentSlug(request)}</title><style>body{max-width:780px;margin:40px auto;font-family:system-ui;color:#18181b;line-height:1.6}h2{color:#4f46e5}p{white-space:pre-wrap}</style></head><body>${documentHtml(content)}</body></html>`;
-  triggerDownload(new Blob([html], { type: "text/html;charset=utf-8" }), `orbit-${documentSlug(request)}.html`);
+  triggerDownload(
+    new Blob([html], { type: "text/html;charset=utf-8" }),
+    `orbit-${documentSlug(request)}.html`,
+  );
 }
 
 async function removeBgLocal(dataUrl: string): Promise<string> {
   const { removeBackground } = await import("@imgly/background-removal");
   const blob = await (await fetch(dataUrl)).blob();
-  const resultBlob = await removeBackground(blob, { output: { format: "image/png" } });
+  const resultBlob = await removeBackground(blob, {
+    output: { format: "image/png" },
+  });
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -125,7 +219,10 @@ async function removeBgLocal(dataUrl: string): Promise<string> {
   });
 }
 
-function composeOnBackground(pngDataUrl: string, bgColor: string): Promise<string> {
+function composeOnBackground(
+  pngDataUrl: string,
+  bgColor: string,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -143,7 +240,11 @@ function composeOnBackground(pngDataUrl: string, bgColor: string): Promise<strin
   });
 }
 
-export default function OrbitChat() {
+export default function OrbitChat({
+  onToast,
+}: {
+  onToast?: (message: string) => void;
+}) {
   const [messages, setMessages] = useState<Msg[]>([WELCOME]);
   // Só persiste depois de carregar o histórico salvo (evita sobrescrever com o estado inicial)
   const [historyReady, setHistoryReady] = useState(false);
@@ -166,8 +267,47 @@ export default function OrbitChat() {
   // 💎 BYOK — qualidade de imagem premium (preferência em localStorage "orbit_premium_image")
   const [premiumImage, setPremiumImage] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [model, setModel] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setModel(readOrbitModel());
+    function onModelChange(event: Event) {
+      const value = (event as CustomEvent<string>).detail;
+      setModel(typeof value === "string" ? value : "");
+    }
+    window.addEventListener(ORBIT_MODEL_EVENT, onModelChange);
+    return () => window.removeEventListener(ORBIT_MODEL_EVENT, onModelChange);
+  }, []);
+
+  async function requestChat(message: string, history: unknown) {
+    const payload = { message, history, ...(model ? { model } : {}) };
+    if (!model) {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return response.json();
+    }
+    try {
+      const response = await fetch("/api/chat/openrouter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (response.ok) return data;
+    } catch {}
+    onToast?.("⚠️ respondendo com Gemini");
+    const fallback = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, history }),
+    });
+    return fallback.json();
+  }
 
   // Carrega a preferência premium ao montar
   useEffect(() => {
@@ -200,7 +340,10 @@ export default function OrbitChat() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           // Tarefa 9.4 — histórico com a boas-vindas ANTIGA → descarta e mostra a atual
           const hasOldWelcome = parsed.some(
-            (m) => m.role === "orbit" && typeof m.text === "string" && m.text.includes("Anexe a foto de um produto para gerar")
+            (m) =>
+              m.role === "orbit" &&
+              typeof m.text === "string" &&
+              m.text.includes("Anexe a foto de um produto para gerar"),
           );
           // Tarefa 3.3 — histórico válido → substitui o estado (a boas-vindas não reaparece)
           if (!hasOldWelcome) setMessages(parsed.slice(-HISTORY_MAX));
@@ -223,7 +366,7 @@ export default function OrbitChat() {
       try {
         localStorage.setItem(
           HISTORY_KEY,
-          JSON.stringify(trimmed.map((m) => ({ role: m.role, text: m.text })))
+          JSON.stringify(trimmed.map((m) => ({ role: m.role, text: m.text }))),
         );
       } catch {}
     }
@@ -244,7 +387,10 @@ export default function OrbitChat() {
       ?.writeText(text)
       .then(() => {
         setCopiedIdx(i);
-        window.setTimeout(() => setCopiedIdx((cur) => (cur === i ? null : cur)), 1500);
+        window.setTimeout(
+          () => setCopiedIdx((cur) => (cur === i ? null : cur)),
+          1500,
+        );
       })
       .catch(() => {});
   }
@@ -254,7 +400,8 @@ export default function OrbitChat() {
     const now = new Date();
     const iso = now.toISOString().slice(0, 10);
     const lines = messages.map(
-      (m) => `${m.role === "user" ? "VOCÊ" : "ORBIT"}: ${m.text}${m.image ? "\n(imagem anexada no chat)" : ""}`
+      (m) =>
+        `${m.role === "user" ? "VOCÊ" : "ORBIT"}: ${m.text}${m.image ? "\n(imagem anexada no chat)" : ""}`,
     );
     const content = `Conversa com o Orbit — ${now.toLocaleString("pt-BR")}\n\n${lines.join("\n\n")}\n`;
     const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
@@ -267,7 +414,10 @@ export default function OrbitChat() {
   }
 
   useEffect(() => {
-    boxRef.current?.scrollTo({ top: boxRef.current.scrollHeight, behavior: "smooth" });
+    boxRef.current?.scrollTo({
+      top: boxRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messages, loading]);
 
   // FIM DO LIMITE RÍGIDO: nunca negamos uma mensagem. O contador é apenas
@@ -283,7 +433,11 @@ export default function OrbitChat() {
   }
 
   // Gera a imagem de vitrine chamando /api/image (com contexto do produto)
-  async function generateShowcase(dataUrl: string, style: string, productContext: string) {
+  async function generateShowcase(
+    dataUrl: string,
+    style: string,
+    productContext: string,
+  ) {
     const res = await fetch("/api/image", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -333,7 +487,10 @@ export default function OrbitChat() {
   function stripStyle(text: string): string {
     return text
       .replace(/\b(1|2|3)\b/g, " ")
-      .replace(/fundo branco|fundo transparente|transparente|branco|cen[aá]rio|profissional|png/gi, " ")
+      .replace(
+        /fundo branco|fundo transparente|transparente|branco|cen[aá]rio|profissional|png/gi,
+        " ",
+      )
       .replace(/[,.:;\-–]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -346,40 +503,93 @@ export default function OrbitChat() {
 
     // 💎 /config → abre as configurações do chat (inclui "Qualidade de imagem")
     if (text === "/config") {
-      setMessages((m) => [...m, { role: "user", text }, { role: "orbit", text: "⚙️ Configurações abertas acima. Toque no interruptor 💎 para alternar a qualidade das imagens geradas por texto." }]);
+      setMessages((m) => [
+        ...m,
+        { role: "user", text },
+        {
+          role: "orbit",
+          text: "⚙️ Configurações abertas acima. Toque no interruptor 💎 para alternar a qualidade das imagens geradas por texto.",
+        },
+      ]);
       setInput("");
       setShowSettings(true);
       return;
     }
 
-    const docTrigger = /(curr[ií]culo|declarac[aã]o|relat[óo]rio|contrato|recibo|certid[ãa]o|or[çc]amento|cronograma)/i;
-    const wantsFile = /(pdf|word|arquivo|documento|gerar|crie|fa[çc]a|monte|envie)/i;
-    const wantsWord = /\b(word|docx|doc)\b/i.test(text);
+    const docTrigger =
+      /(curr[ií]culo|declarac[aã]o|relat[óo]rio|contrato|recibo|certid[ãa]o|or[çc]amento|cronograma|atestado|carta|of[ií]cio|procura[cç][aã]o)/i;
+    const wantsFile =
+      /(pdf|word|arquivo|documento|gerar|crie|fa[çc]a|monte|envie)/i;
+    const wantsWord =
+      /\b(word|docx|doc)\b/i.test(text) ||
+      !/\b(pdf|html|txt|texto simples)\b/i.test(text);
     const wantsHtml = /\bhtml\b/i.test(text);
     const wantsTxt = /\b(txt|texto simples)\b/i.test(text);
-    const wantsPdf = /\bpdf\b/i.test(text) || (!wantsWord && !wantsHtml && !wantsTxt);
+    const wantsPdf = /\bpdf\b/i.test(text);
     if (docTrigger.test(text) && wantsFile.test(text)) {
-      setMessages((m) => [...m, { role: "user", text }, { role: "orbit", text: "📝 Gerando seu documento..." }]);
+      setMessages((m) => [
+        ...m,
+        { role: "user", text },
+        { role: "orbit", text: "📝 Gerando seu documento..." },
+      ]);
       setInput("");
       setLoading(true);
       try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: `Gere o conteúdo completo de ${text}. Formato: seções com títulos claros, campos entre [COLCHETES]. Português BR.`, history: [] }),
-        });
-        const data = await res.json();
-        if (typeof data.reply === "string" && data.reply.trim().length >= 50) {
-          if (wantsWord) downloadDocumentDocx(data.reply, text);
-          else if (wantsHtml) downloadDocumentHtml(data.reply, text);
-          else if (wantsTxt) downloadDocumentTxt(data.reply, text);
-          else if (wantsPdf) downloadDocumentPdf(data.reply, text);
-          setMessages((m) => [...m, { role: "orbit", text: "✅ Documento pronto! Baixe no formato que quiser:", document: { content: data.reply, request: text } }]);
+        const data = await requestChat(
+          `Gere o conteúdo completo de ${text}. Responda apenas JSON válido no formato {"titulo":"TÍTULO","paragrafos":["parágrafo 1","Nome: ____________"]}. Inclua campos em branco para preenchimento manual quando fizer sentido. Português do Brasil.`,
+          [],
+        );
+        const rawReply = typeof data.reply === "string" ? data.reply : "";
+        const jsonStart = rawReply.indexOf("{");
+        const jsonEnd = rawReply.lastIndexOf("}");
+        let documentContent = rawReply;
+        if (jsonStart >= 0 && jsonEnd > jsonStart) {
+          try {
+            const parsed = JSON.parse(
+              rawReply.slice(jsonStart, jsonEnd + 1),
+            ) as { titulo?: unknown; paragrafos?: unknown };
+            const paragraphs = Array.isArray(parsed.paragrafos)
+              ? parsed.paragrafos.filter(
+                  (item): item is string =>
+                    typeof item === "string" && item.trim().length > 0,
+                )
+              : [];
+            if (paragraphs.length > 0)
+              documentContent = [
+                typeof parsed.titulo === "string" ? parsed.titulo : text,
+                ...paragraphs,
+              ].join("\n\n");
+          } catch {}
+        }
+        if (documentContent.trim().length >= 50) {
+          if (wantsWord) await downloadDocumentDocx(documentContent, text);
+          else if (wantsHtml) downloadDocumentHtml(documentContent, text);
+          else if (wantsTxt) downloadDocumentTxt(documentContent, text);
+          else if (wantsPdf) downloadDocumentPdf(documentContent, text);
+          setMessages((m) => [
+            ...m,
+            {
+              role: "orbit",
+              text: "✅ Documento pronto! Baixe no formato que quiser:",
+              document: { content: documentContent, request: text },
+            },
+          ]);
         } else {
-          setMessages((m) => [...m, { role: "orbit", text: data.error ?? "Não consegui gerar o documento agora. Tente novamente." }]);
+          setMessages((m) => [
+            ...m,
+            {
+              role: "orbit",
+              text:
+                data.error ??
+                "Não consegui gerar o documento agora. Tente novamente.",
+            },
+          ]);
         }
       } catch {
-        setMessages((m) => [...m, { role: "orbit", text: "Falha de conexão ao gerar o documento." }]);
+        setMessages((m) => [
+          ...m,
+          { role: "orbit", text: "Falha de conexão ao gerar o documento." },
+        ]);
       } finally {
         setUsed(bumpUsage());
         setLoading(false);
@@ -388,45 +598,97 @@ export default function OrbitChat() {
     }
 
     // ── FLUXO 0: geração de imagem por TEXTO ("faça/gere/crie/desenhe uma imagem/foto de X") ──
-    const imgCmd = text.match(/^(fa[çc]a|gere|crie|desenhe)\s+(uma\s+|um\s+)?(imagem|foto)\s+/i);
-    const directProductCmd = /^(quero|preciso|me mostre|mostre|crie|fa[çc]a)\s+(uma?\s+)?(camiseta|camisa|tenis|t[êe]nis|bone|b[óo]ne|colar|anel|brinco|capacete|cal[çc]a|shorts|moletom|vestido|saia|bolsa|mochila|relogio|rel[óo]gio|fone|celular|notebook)/i.test(text);
+    const imgCmd = text.match(
+      /^(fa[çc]a|gere|crie|desenhe)\s+(uma\s+|um\s+)?(imagem|foto)\s+/i,
+    );
+    const directProductCmd =
+      /^(quero|preciso|me mostre|mostre|crie|fa[çc]a)\s+(uma?\s+)?(camiseta|camisa|tenis|t[êe]nis|bone|b[óo]ne|colar|anel|brinco|capacete|cal[çc]a|shorts|moletom|vestido|saia|bolsa|mochila|relogio|rel[óo]gio|fone|celular|notebook)/i.test(
+        text,
+      );
     if ((imgCmd || directProductCmd) && !image) {
       const theme = imgCmd
         ? text
-          .replace(/^(fa[çc]a|gere|crie|desenhe)\s+/i, "")
-          .replace(/^(uma|um|o|a)\s+/i, "")
-          .replace(/^(imagem|foto)\s+/i, "")
-          .replace(/^(de|do|da|sobre|com)\s+/i, "")
-          .replace(/^(uma|um|o|a)\s+/i, "")
-          .trim() || "algo surpreendente"
+            .replace(/^(fa[çc]a|gere|crie|desenhe)\s+/i, "")
+            .replace(/^(uma|um|o|a)\s+/i, "")
+            .replace(/^(imagem|foto)\s+/i, "")
+            .replace(/^(de|do|da|sobre|com)\s+/i, "")
+            .replace(/^(uma|um|o|a)\s+/i, "")
+            .trim() || "algo surpreendente"
         : text;
       setMessages((m) => [...m, { role: "user", text }]);
       setInput("");
       setLoading(true);
-      setMessages((m) => [...m, { role: "orbit", text: premiumImage ? "💎 Gerando sua imagem em qualidade premium…" : "🎨 Gerando sua imagem…" }]);
+      setMessages((m) => [
+        ...m,
+        {
+          role: "orbit",
+          text: premiumImage
+            ? "💎 Gerando sua imagem em qualidade premium…"
+            : "🎨 Gerando sua imagem…",
+        },
+      ]);
       try {
-        const res = await fetch("/api/text-image", {
+        const family = orbitModelFamily(model);
+        const endpoint = family === "gemini" ? "/api/image" : "/api/text-image";
+        const body =
+          family === "gemini"
+            ? { prompt: theme }
+            : {
+                prompt: theme,
+                premium: family === "openai" || premiumImage,
+                forcePollinations: family === "textonly",
+              };
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: theme, premium: premiumImage }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (data.imageDataUrl) {
-          const label = data.provider === "openai" ? "💎 GPT-Image" : "🌸 Pollinations (grátis)";
+          const label =
+            data.provider === "openai"
+              ? "💎 GPT-Image"
+              : "🌸 Pollinations (grátis)";
           setMessages((m) => [
             ...m,
-            ...(data.notice ? [{ role: "orbit" as const, text: data.notice }] : []),
-            { role: "orbit", text: directProductCmd ? "🎨 Aqui está! Quer variação? Diga o que mudar." : `🎨 Aqui está sua imagem de ${theme}! (${label}) Clique nela para baixar.`, image: data.imageDataUrl },
+            ...(family === "textonly"
+              ? [
+                  {
+                    role: "orbit" as const,
+                    text: `ℹ️ ${model} é um modelo de texto e não gera imagens nativamente. O Orbit usou o motor padrão Pollinations/FLUX.`,
+                  },
+                ]
+              : []),
+            ...(data.notice
+              ? [{ role: "orbit" as const, text: data.notice }]
+              : []),
+            {
+              role: "orbit",
+              text: directProductCmd
+                ? "🎨 Aqui está! Quer variação? Diga o que mudar."
+                : `🎨 Aqui está sua imagem de ${theme}! (${label}) Clique nela para baixar.`,
+              image: data.imageDataUrl,
+            },
           ]);
         } else {
           setMessages((m) => [
             ...m,
-            ...(data.notice ? [{ role: "orbit" as const, text: data.notice }] : []),
-            { role: "orbit", text: data.error ?? "Não consegui gerar a imagem agora. Tente novamente." },
+            ...(data.notice
+              ? [{ role: "orbit" as const, text: data.notice }]
+              : []),
+            {
+              role: "orbit",
+              text:
+                data.error ??
+                "Não consegui gerar a imagem agora. Tente novamente.",
+            },
           ]);
         }
       } catch {
-        setMessages((m) => [...m, { role: "orbit", text: "Falha de conexão ao gerar a imagem." }]);
+        setMessages((m) => [
+          ...m,
+          { role: "orbit", text: "Falha de conexão ao gerar a imagem." },
+        ]);
       }
       setUsed(bumpUsage());
       setLoading(false);
@@ -437,7 +699,11 @@ export default function OrbitChat() {
     if ((pendingProduct || lastOriginal) && text) {
       const choice = detectStyle(text) ?? "1";
       if (choice) {
-        const labels: Record<string, string> = { "1": "fundo branco", "2": "fundo transparente", "3": "cenário profissional" };
+        const labels: Record<string, string> = {
+          "1": "fundo branco",
+          "2": "fundo transparente",
+          "3": "cenário profissional",
+        };
         setMessages((m) => [...m, { role: "user", text }]);
         setInput("");
         setLoading(true);
@@ -449,13 +715,26 @@ export default function OrbitChat() {
         if (!product && lastOriginal && (choice === "1" || choice === "2")) {
           try {
             const transparent = await removeBgLocal(lastOriginal);
-            const final = choice === "1" ? await composeOnBackground(transparent, "#FFFFFF") : transparent;
+            const final =
+              choice === "1"
+                ? await composeOnBackground(transparent, "#FFFFFF")
+                : transparent;
             setMessages((m) => [
               ...m,
-              { role: "orbit", text: "Estilo atualizado usando a SUA foto original.", image: final },
+              {
+                role: "orbit",
+                text: "Estilo atualizado usando a SUA foto original.",
+                image: final,
+              },
             ]);
           } catch {
-            setMessages((m) => [...m, { role: "orbit", text: "Falha ao remover o fundo localmente. Tente novamente." }]);
+            setMessages((m) => [
+              ...m,
+              {
+                role: "orbit",
+                text: "Falha ao remover o fundo localmente. Tente novamente.",
+              },
+            ]);
           }
           setUsed(bumpUsage());
           setLoading(false);
@@ -466,7 +745,10 @@ export default function OrbitChat() {
         if (!product) {
           setMessages((m) => [
             ...m,
-            { role: "orbit", text: "Para o cenário profissional eu preciso processar a foto com IA — anexe a foto do produto novamente, por favor." },
+            {
+              role: "orbit",
+              text: "Para o cenário profissional eu preciso processar a foto com IA — anexe a foto do produto novamente, por favor.",
+            },
           ]);
           setLoading(false);
           return;
@@ -475,22 +757,39 @@ export default function OrbitChat() {
         // ── ATALHO LOCAL: estilos 1 e 2 não precisam de IA — remove o fundo da FOTO REAL ──
         if (choice === "1" || choice === "2") {
           try {
-            setMessages((m) => [...m, { role: "orbit", text: "Removendo o fundo da sua foto… (o primeiro processamento baixa um modelo e pode demorar ~1 min; os próximos são rápidos)" }]);
+            setMessages((m) => [
+              ...m,
+              {
+                role: "orbit",
+                text: "Removendo o fundo da sua foto… (o primeiro processamento baixa um modelo e pode demorar ~1 min; os próximos são rápidos)",
+              },
+            ]);
 
             const transparent = await removeBgLocal(product);
-            const final = choice === "1"
-              ? await composeOnBackground(transparent, "#FFFFFF")
-              : transparent;
+            const final =
+              choice === "1"
+                ? await composeOnBackground(transparent, "#FFFFFF")
+                : transparent;
 
             setMessages((m) => [
               ...m,
-              { role: "orbit", text: choice === "1"
-                  ? "Fundo branco aplicado — diga 'transparente' ou 'cenário' para mudar."
-                  : "Fundo removido (PNG transparente). Baixe clicando nela. Quer o anúncio completo (títulos, descrição, preço)?",
-                image: final },
+              {
+                role: "orbit",
+                text:
+                  choice === "1"
+                    ? "Fundo branco aplicado — diga 'transparente' ou 'cenário' para mudar."
+                    : "Fundo removido (PNG transparente). Baixe clicando nela. Quer o anúncio completo (títulos, descrição, preço)?",
+                image: final,
+              },
             ]);
           } catch {
-            setMessages((m) => [...m, { role: "orbit", text: "Falha ao remover o fundo localmente. Tente novamente." }]);
+            setMessages((m) => [
+              ...m,
+              {
+                role: "orbit",
+                text: "Falha ao remover o fundo localmente. Tente novamente.",
+              },
+            ]);
           }
           setUsed(bumpUsage());
           setLoading(false);
@@ -516,7 +815,10 @@ export default function OrbitChat() {
         if (!effectiveContext) {
           setMessages((m) => [
             ...m,
-            { role: "orbit", text: `Ainda não sei qual é o produto da foto. Me descreva ele junto com o estilo.\n\nEx.: "capacete de moto preto fosco, fundo branco"\nou "tênis nike branco, 1"` },
+            {
+              role: "orbit",
+              text: `Ainda não sei qual é o produto da foto. Me descreva ele junto com o estilo.\n\nEx.: "capacete de moto preto fosco, fundo branco"\nou "tênis nike branco, 1"`,
+            },
           ]);
           setPendingProduct(product);
           setAwaitingDesc(true);
@@ -525,19 +827,40 @@ export default function OrbitChat() {
         }
 
         try {
-          console.log("🔍 ENVIANDO productContext:", effectiveContext.slice(0, 120));
+          console.log(
+            "🔍 ENVIANDO productContext:",
+            effectiveContext.slice(0, 120),
+          );
 
-          const data = await generateShowcase(product, choice, effectiveContext);
+          const data = await generateShowcase(
+            product,
+            choice,
+            effectiveContext,
+          );
           if (data.imageDataUrl) {
             setMessages((m) => [
               ...m,
-              { role: "orbit", text: "Imagem de vitrine pronta. Baixe clicando nela. Quer que eu monte o anúncio completo (títulos, descrição, preço) com este produto?", image: data.imageDataUrl },
+              {
+                role: "orbit",
+                text: "Imagem de vitrine pronta. Baixe clicando nela. Quer que eu monte o anúncio completo (títulos, descrição, preço) com este produto?",
+                image: data.imageDataUrl,
+              },
             ]);
           } else {
-            setMessages((m) => [...m, { role: "orbit", text: data.error ?? "Não consegui gerar a imagem. Tente novamente." }]);
+            setMessages((m) => [
+              ...m,
+              {
+                role: "orbit",
+                text:
+                  data.error ?? "Não consegui gerar a imagem. Tente novamente.",
+              },
+            ]);
           }
         } catch {
-          setMessages((m) => [...m, { role: "orbit", text: "Falha de conexão ao gerar a imagem." }]);
+          setMessages((m) => [
+            ...m,
+            { role: "orbit", text: "Falha de conexão ao gerar a imagem." },
+          ]);
         }
         setUsed(bumpUsage());
         setLoading(false);
@@ -550,7 +873,10 @@ export default function OrbitChat() {
 
     // FLUXO 2 revisado: a primeira vitrine é sempre entregue imediatamente.
     if (image) {
-      setMessages((m) => [...m, { role: "user", text: `${text || "produto"} 📎 [imagem anexada]` }]);
+      setMessages((m) => [
+        ...m,
+        { role: "user", text: `${text || "produto"} 📎 [imagem anexada]` },
+      ]);
       setInput("");
       setLoading(true);
       const dataUrl = image;
@@ -558,12 +884,20 @@ export default function OrbitChat() {
       try {
         let identified = "";
         try {
-          const analysis = await analyzeAndAnnounce(dataUrl, "Que produto é este? Responda em uma frase curta.");
+          const analysis = await analyzeAndAnnounce(
+            dataUrl,
+            "Que produto é este? Responda em uma frase curta.",
+          );
           identified = (analysis.reply ?? "").trim();
         } catch {
           identified = "";
         }
-        if (!identified || identified.length < 3 || /ocupada|indisponível/i.test(identified)) identified = stripStyle(text) || "produto";
+        if (
+          !identified ||
+          identified.length < 3 ||
+          /ocupada|indisponível/i.test(identified)
+        )
+          identified = stripStyle(text) || "produto";
         const style = detectStyle(text) ?? "1";
         setProductName(identified);
         setAwaitingDesc(false);
@@ -571,15 +905,42 @@ export default function OrbitChat() {
         setLastOriginal(dataUrl);
         if (style === "3") {
           const showcase = await generateShowcase(dataUrl, "3", identified);
-          if (!showcase.imageDataUrl) throw new Error(showcase.error ?? "Falha ao gerar cenário");
-          setMessages((m) => [...m, { role: "orbit", text: "✅ Vitrine pronta com cenário! Baixe clicando. Quer fundo branco (diga '1') ou transparente (diga '2')?", image: showcase.imageDataUrl }]);
+          if (!showcase.imageDataUrl)
+            throw new Error(showcase.error ?? "Falha ao gerar cenário");
+          setMessages((m) => [
+            ...m,
+            {
+              role: "orbit",
+              text: "✅ Vitrine pronta com cenário! Baixe clicando. Quer fundo branco (diga '1') ou transparente (diga '2')?",
+              image: showcase.imageDataUrl,
+            },
+          ]);
         } else {
           const transparent = await removeBgLocal(dataUrl);
-          const final = style === "2" ? transparent : await composeOnBackground(transparent, "#FFFFFF");
-          setMessages((m) => [...m, { role: "orbit", text: style === "2" ? "✅ Vitrine pronta com fundo transparente! Baixe clicando. Quer fundo branco (diga '1') ou cenário (diga '3')?" : "✅ Vitrine pronta com fundo branco! Baixe clicando. Quer fundo transparente (diga '2') ou cenário (diga '3')?", image: final }]);
+          const final =
+            style === "2"
+              ? transparent
+              : await composeOnBackground(transparent, "#FFFFFF");
+          setMessages((m) => [
+            ...m,
+            {
+              role: "orbit",
+              text:
+                style === "2"
+                  ? "✅ Vitrine pronta com fundo transparente! Baixe clicando. Quer fundo branco (diga '1') ou cenário (diga '3')?"
+                  : "✅ Vitrine pronta com fundo branco! Baixe clicando. Quer fundo transparente (diga '2') ou cenário (diga '3')?",
+              image: final,
+            },
+          ]);
         }
       } catch {
-        setMessages((m) => [...m, { role: "orbit", text: "Não consegui processar a foto agora. Tente novamente em instantes." }]);
+        setMessages((m) => [
+          ...m,
+          {
+            role: "orbit",
+            text: "Não consegui processar a foto agora. Tente novamente em instantes.",
+          },
+        ]);
       } finally {
         setUsed(bumpUsage());
         setLoading(false);
@@ -589,7 +950,10 @@ export default function OrbitChat() {
 
     // ── FLUXO 2 legado (mantido como fallback de compatibilidade) ──
     if (image) {
-      setMessages((m) => [...m, { role: "user", text: `${text || "produto"} 📎 [imagem anexada]` }]);
+      setMessages((m) => [
+        ...m,
+        { role: "user", text: `${text || "produto"} 📎 [imagem anexada]` },
+      ]);
       setInput("");
       setLoading(true);
       const dataUrl = image;
@@ -598,16 +962,26 @@ export default function OrbitChat() {
       const askStyle = `Qual estilo de imagem de vitrine você quer?\n\n1 — Fundo branco (padrão marketplace)\n2 — Fundo transparente (PNG)\n3 — Cenário profissional\n\nResponda com 1, 2, 3 — ou escreva: fundo branco, transparente ou cenário.`;
 
       try {
-        const analysis = await analyzeAndAnnounce(dataUrl, "Que produto é este? Responda em uma frase curta.");
+        const analysis = await analyzeAndAnnounce(
+          dataUrl,
+          "Que produto é este? Responda em uma frase curta.",
+        );
         const identified = (analysis.reply ?? "").trim();
 
-        if (identified.length > 3 && !identified.includes("ocupada") && !identified.includes("indisponível")) {
+        if (
+          identified.length > 3 &&
+          !identified.includes("ocupada") &&
+          !identified.includes("indisponível")
+        ) {
           // ✅ Visão funcionou
           setProductName(identified);
           setAwaitingDesc(false);
           setMessages((m) => [
             ...m,
-            { role: "orbit", text: `Identifiquei: ${identified}\n\n${askStyle}` },
+            {
+              role: "orbit",
+              text: `Identifiquei: ${identified}\n\n${askStyle}`,
+            },
           ]);
         } else {
           // ⚠️ Visão indisponível → pergunta ao usuário (fluxo sempre vivo!)
@@ -615,7 +989,10 @@ export default function OrbitChat() {
           setAwaitingDesc(true);
           setMessages((m) => [
             ...m,
-            { role: "orbit", text: `Não consegui analisar a foto agora (IA com alta demanda). Sem problema — me descreva o produto junto com o estilo.\n\nEx.: "capacete de moto preto fosco, fundo branco"\nou "tênis nike branco, 1"\n\n${askStyle}` },
+            {
+              role: "orbit",
+              text: `Não consegui analisar a foto agora (IA com alta demanda). Sem problema — me descreva o produto junto com o estilo.\n\nEx.: "capacete de moto preto fosco, fundo branco"\nou "tênis nike branco, 1"\n\n${askStyle}`,
+            },
           ]);
         }
         setPendingProduct(dataUrl);
@@ -625,7 +1002,10 @@ export default function OrbitChat() {
         setAwaitingDesc(true);
         setMessages((m) => [
           ...m,
-          { role: "orbit", text: `Falha ao analisar a foto (IA com alta demanda). Sem problema — me descreva o produto junto com o estilo.\n\nEx.: "capacete de moto preto fosco, fundo branco"\n\n${askStyle}` },
+          {
+            role: "orbit",
+            text: `Falha ao analisar a foto (IA com alta demanda). Sem problema — me descreva o produto junto com o estilo.\n\nEx.: "capacete de moto preto fosco, fundo branco"\n\n${askStyle}`,
+          },
         ]);
         setPendingProduct(dataUrl);
       }
@@ -642,16 +1022,20 @@ export default function OrbitChat() {
     try {
       const history = messages
         .filter((m) => m !== WELCOME)
-        .map((m) => ({ role: m.role === "user" ? "user" : "model", parts: [{ text: m.text }] }));
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history }),
-      });
-      const data = await res.json();
-      setMessages((m) => [...m, { role: "orbit", text: data.reply ?? data.error }]);
+        .map((m) => ({
+          role: m.role === "user" ? "user" : "model",
+          parts: [{ text: m.text }],
+        }));
+      const data = await requestChat(text, history);
+      setMessages((m) => [
+        ...m,
+        { role: "orbit", text: data.reply ?? data.error },
+      ]);
     } catch {
-      setMessages((m) => [...m, { role: "orbit", text: "Falha de conexão. Tente novamente." }]);
+      setMessages((m) => [
+        ...m,
+        { role: "orbit", text: "Falha de conexão. Tente novamente." },
+      ]);
     }
     setUsed(bumpUsage());
     setLoading(false);
@@ -663,11 +1047,29 @@ export default function OrbitChat() {
       <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3.5 dark:border-white/[0.06]">
         <div className="flex items-center gap-2.5">
           <Logo size={16} />
-          <span className="font-display text-[13px] font-medium tracking-wide text-zinc-700 dark:text-zinc-300">Orbit</span>
+          <span className="font-display text-[13px] font-medium tracking-wide text-zinc-700 dark:text-zinc-300">
+            Orbit
+          </span>
           <span className="ml-1 flex items-center gap-1.5 text-[11px] tracking-wide text-zinc-400 dark:text-zinc-600">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/80" />
             ao vivo
           </span>
+          {model && (
+            <>
+              <span className="max-w-[180px] truncate rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-600 dark:text-violet-400">
+                🧠 {model}
+              </span>
+              <button
+                type="button"
+                onClick={() => setOrbitModel("")}
+                aria-label="Voltar para Gemini nativo"
+                title="Voltar para Gemini nativo"
+                className="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/[0.06] dark:hover:text-white"
+              >
+                ↺
+              </button>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -726,8 +1128,8 @@ export default function OrbitChat() {
                 💎 Qualidade de imagem — Usar API OpenAI (sua chave)
               </p>
               <p className="text-[11.5px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-                Com OPENAI_API_KEY no servidor, GPT-Image é o motor padrão das imagens. Sem ela, usamos o gerador
-                gratuito.
+                Com OPENAI_API_KEY no servidor, GPT-Image é o motor padrão das
+                imagens. Sem ela, usamos o gerador gratuito.
               </p>
             </div>
             <button
@@ -750,7 +1152,10 @@ export default function OrbitChat() {
       )}
 
       {/* Mensagens */}
-      <div ref={boxRef} className="scroll-slim min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-6">
+      <div
+        ref={boxRef}
+        className="scroll-slim min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-6"
+      >
         {messages.map((m, i) => (
           <div key={i}>
             {m.role === "user" ? (
@@ -764,9 +1169,18 @@ export default function OrbitChat() {
                 <div className="mt-1 w-px self-stretch bg-zinc-200 dark:bg-white/15" />
                 <div className="max-w-[88%]">
                   {m.image && (
-                    <a href={m.image} download="orbit-vitrine.png" target="_blank" rel="noopener noreferrer">
+                    <a
+                      href={m.image}
+                      download="orbit-vitrine.png"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={m.image} alt="Imagem de vitrine gerada" className="mb-2 max-w-[280px] cursor-pointer rounded-2xl border border-zinc-200 transition hover:opacity-90 dark:border-white/10" />
+                      <img
+                        src={m.image}
+                        alt="Imagem de vitrine gerada"
+                        className="mb-2 max-w-[280px] cursor-pointer rounded-2xl border border-zinc-200 transition hover:opacity-90 dark:border-white/10"
+                      />
                     </a>
                   )}
                   {m.text && (
@@ -776,10 +1190,54 @@ export default function OrbitChat() {
                   )}
                   {m.document && (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <button type="button" onClick={() => downloadDocumentPdf(m.document!.content, m.document!.request)} className="rounded-xl bg-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500">PDF</button>
-                      <button type="button" onClick={() => downloadDocumentDocx(m.document!.content, m.document!.request)} className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15">Word</button>
-                      <button type="button" onClick={() => downloadDocumentHtml(m.document!.content, m.document!.request)} className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15">HTML</button>
-                      <button type="button" onClick={() => downloadDocumentTxt(m.document!.content, m.document!.request)} className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15">TXT</button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadDocumentPdf(
+                            m.document!.content,
+                            m.document!.request,
+                          )
+                        }
+                        className="rounded-xl bg-violet-600 px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500"
+                      >
+                        PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadDocumentDocx(
+                            m.document!.content,
+                            m.document!.request,
+                          )
+                        }
+                        className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15"
+                      >
+                        Word
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadDocumentHtml(
+                            m.document!.content,
+                            m.document!.request,
+                          )
+                        }
+                        className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15"
+                      >
+                        HTML
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          downloadDocumentTxt(
+                            m.document!.content,
+                            m.document!.request,
+                          )
+                        }
+                        className="rounded-xl border border-zinc-300 px-3 py-1.5 text-[11px] font-semibold dark:border-white/15"
+                      >
+                        TXT
+                      </button>
                     </div>
                   )}
                   {/* Tarefa 9.1 — copiar resposta (✓ por 1,5s) */}
@@ -826,8 +1284,8 @@ export default function OrbitChat() {
         {used >= 25 && !highUseDismissed && (
           <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[12.5px] leading-relaxed text-amber-700 dark:border-amber-400/25 dark:bg-amber-400/[0.06] dark:text-amber-300">
             <span>
-              Você usa o Orbit intensivamente 🪐 — respostas podem ficar lentas em dias de pico. Amanhã volta ao
-              normal.
+              Você usa o Orbit intensivamente 🪐 — respostas podem ficar lentas
+              em dias de pico. Amanhã volta ao normal.
             </span>
             <button
               type="button"
@@ -841,7 +1299,10 @@ export default function OrbitChat() {
       </div>
 
       {/* Input */}
-      <form onSubmit={send} className="flex items-center gap-3 border-t border-zinc-200 px-4 py-3.5 dark:border-white/[0.06]">
+      <form
+        onSubmit={send}
+        className="flex items-center gap-3 border-t border-zinc-200 px-4 py-3.5 dark:border-white/[0.06]"
+      >
         <input
           ref={fileRef}
           type="file"
@@ -862,14 +1323,27 @@ export default function OrbitChat() {
           title="Anexar imagem do produto"
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-zinc-300 text-zinc-400 transition hover:border-zinc-500 hover:text-zinc-900 dark:border-white/15 dark:text-zinc-500 dark:hover:border-white/30 dark:hover:text-white"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
           </svg>
         </button>
         {image && (
           <div className="relative shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image} alt="preview" className="h-9 w-9 rounded object-cover" />
+            <img
+              src={image}
+              alt="preview"
+              className="h-9 w-9 rounded object-cover"
+            />
             <button
               type="button"
               onClick={() => setImage(null)}
@@ -884,7 +1358,13 @@ export default function OrbitChat() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={loading}
-          placeholder={awaitingDesc ? "Descreva o produto + estilo: ex.: capacete de moto preto, fundo branco" : pendingProduct ? "Responda: 1, 2, 3, fundo branco, transparente ou cenário…" : "Pergunte ou anexe a foto de um produto…"}
+          placeholder={
+            awaitingDesc
+              ? "Descreva o produto + estilo: ex.: capacete de moto preto, fundo branco"
+              : pendingProduct
+                ? "Responda: 1, 2, 3, fundo branco, transparente ou cenário…"
+                : "Pergunte ou anexe a foto de um produto…"
+          }
           className="flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400 disabled:opacity-40 dark:text-zinc-100 dark:placeholder:text-zinc-600"
         />
         <button
@@ -894,7 +1374,13 @@ export default function OrbitChat() {
           className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-900 text-white transition hover:bg-zinc-700 disabled:bg-zinc-300 dark:bg-white dark:text-black dark:hover:bg-zinc-200 dark:disabled:bg-white/10 dark:disabled:text-zinc-600"
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
-            <path d="M12 19V5m0 0l-6 6m6-6l6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path
+              d="M12 19V5m0 0l-6 6m6-6l6 6"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </button>
       </form>

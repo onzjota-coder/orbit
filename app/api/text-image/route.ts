@@ -11,13 +11,19 @@ const NEGATIVE =
 
 export async function POST(req: Request) {
   try {
-    const { prompt, premium } = await req.json();
+    const { prompt, premium, forcePollinations } = await req.json();
 
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
-      return NextResponse.json({ error: "Descreva a imagem que você quer gerar." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Descreva a imagem que você quer gerar." },
+        { status: 400 },
+      );
     }
     if (prompt.length > 500) {
-      return NextResponse.json({ error: "Descrição muito longa (máx. 500 caracteres)." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Descrição muito longa (máx. 500 caracteres)." },
+        { status: 400 },
+      );
     }
 
     const fullPrompt = `${prompt.trim()}, high quality, detailed. ${NEGATIVE}`;
@@ -33,37 +39,61 @@ export async function POST(req: Request) {
     let notice: string | undefined;
 
     // PRIORIDADE 1: GPT-Image (motor padrão quando o servidor tem a chave)
-    if (wantOpenai) {
+    if (wantOpenai && forcePollinations !== true) {
       console.log("[ORBIT-IMG] provedor=openai");
       try {
-        const res = await fetch("https://api.openai.com/v1/images/generations", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${openaiKey}`,
-            "Content-Type": "application/json",
+        const res = await fetch(
+          "https://api.openai.com/v1/images/generations",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${openaiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "gpt-image-1",
+              prompt: fullPrompt,
+              size: "1024x1024",
+              n: 1,
+              quality: "high",
+            }),
+            signal: AbortSignal.timeout(120_000),
           },
-          body: JSON.stringify({ model: "gpt-image-1", prompt: fullPrompt, size: "1024x1024", n: 1, quality: "high" }),
-          signal: AbortSignal.timeout(120_000),
-        });
+        );
 
         if (res.ok) {
           const data = await res.json();
           const b64 = data?.data?.[0]?.b64_json;
           if (b64) {
-            console.log("[ORBIT-IMG] ✅ imagem gerada pela OpenAI (gpt-image-1)");
-            return NextResponse.json({ imageDataUrl: `data:image/png;base64,${b64}`, provider: "openai" });
+            console.log(
+              "[ORBIT-IMG] ✅ imagem gerada pela OpenAI (gpt-image-1)",
+            );
+            return NextResponse.json({
+              imageDataUrl: `data:image/png;base64,${b64}`,
+              provider: "openai",
+            });
           }
-          console.error("[ORBIT-IMG] OpenAI respondeu sem b64_json → caindo para Pollinations");
+          console.error(
+            "[ORBIT-IMG] OpenAI respondeu sem b64_json → caindo para Pollinations",
+          );
         } else {
           // 401 = chave inválida · 429 = cota esgotada → fallback automático
-          console.error(`[ORBIT-IMG] OpenAI falhou (status ${res.status}) → caindo para Pollinations`);
+          console.error(
+            `[ORBIT-IMG] OpenAI falhou (status ${res.status}) → caindo para Pollinations`,
+          );
         }
       } catch (e) {
-        console.error("[ORBIT-IMG] OpenAI indisponível (rede/timeout) → caindo para Pollinations", e);
+        console.error(
+          "[ORBIT-IMG] OpenAI indisponível (rede/timeout) → caindo para Pollinations",
+          e,
+        );
       }
     } else if (premium === true) {
-      notice = "⚠️ Nenhuma OPENAI_API_KEY configurada no servidor — usando gerador gratuito";
-      console.log("[ORBIT-IMG] premium pedido, mas sem OPENAI_API_KEY no servidor → Pollinations");
+      notice =
+        "⚠️ Nenhuma OPENAI_API_KEY configurada no servidor — usando gerador gratuito";
+      console.log(
+        "[ORBIT-IMG] premium pedido, mas sem OPENAI_API_KEY no servidor → Pollinations",
+      );
     }
 
     // PRIORIDADE 2 (grátis/ fallback): Pollinations com retry
@@ -74,9 +104,9 @@ export async function POST(req: Request) {
       console.log(`🖼️ Pollinations tentativa ${attempt}/3`);
       const res = await fetch(
         `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?width=1024&height=1024&model=flux&nologo=true&enhance=true&seed=${Math.floor(
-          Math.random() * 1000000
+          Math.random() * 1000000,
         )}`,
-        { method: "GET", signal: AbortSignal.timeout(90_000) }
+        { method: "GET", signal: AbortSignal.timeout(90_000) },
       );
 
       if (res.ok) {
@@ -93,9 +123,15 @@ export async function POST(req: Request) {
           const mime = res.headers.get("content-type")?.startsWith("image/")
             ? res.headers.get("content-type")!
             : "image/jpeg";
-          return NextResponse.json({ imageDataUrl: `data:${mime};base64,${b64}`, provider: "pollinations", ...(notice ? { notice } : {}) });
+          return NextResponse.json({
+            imageDataUrl: `data:${mime};base64,${b64}`,
+            provider: "pollinations",
+            ...(notice ? { notice } : {}),
+          });
         }
-        console.warn(`⚠️ Tentativa ${attempt}: resposta curta (${buffer.byteLength} bytes) — repetindo`);
+        console.warn(
+          `⚠️ Tentativa ${attempt}: resposta curta (${buffer.byteLength} bytes) — repetindo`,
+        );
       } else {
         console.error(`❌ Tentativa ${attempt}: status ${res.status}`);
       }
@@ -106,10 +142,16 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { error: "O gerador está ocupado. Tente novamente em 1 minuto.", ...(notice ? { notice } : {}) },
-      { status: 502 }
+      {
+        error: "O gerador está ocupado. Tente novamente em 1 minuto.",
+        ...(notice ? { notice } : {}),
+      },
+      { status: 502 },
     );
   } catch {
-    return NextResponse.json({ error: "Erro inesperado ao gerar a imagem." }, { status: 500 });
+    return NextResponse.json(
+      { error: "Erro inesperado ao gerar a imagem." },
+      { status: 500 },
+    );
   }
 }
