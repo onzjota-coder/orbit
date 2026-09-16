@@ -1,35 +1,11 @@
 import { NextResponse } from "next/server";
+import { getKeyCount, getNextKey } from "@/lib/gemini_keys";
+
+export const maxDuration = 60;
 
 // Negative prompt automático — anatomia, texto e qualidade (mesmo padrão de /api/text-image)
 const NEGATIVE =
   "evite: mãos deformadas, dedos extras, membros extras, texto borrado, marca d'água, watermark, assinatura, low quality, blurry, deformed hands, extra fingers, distorted anatomy, jpeg artifacts";
-
-// ─────────────────────────────────────────────────────────────
-// RODÍZIO DE CHAVES (embutido)
-// Suporta: GEMINI_API_KEY, GEMINI_API_KEY_2, GEMINI_API_KEY_3
-// ─────────────────────────────────────────────────────────────
-const GEMINI_KEYS = [
-  process.env.GEMINI_API_KEY,
-  process.env.GEMINI_API_KEY_2,
-  process.env.GEMINI_API_KEY_3,
-].filter((k): k is string => typeof k === "string" && k.length > 10);
-
-if (typeof window === "undefined") {
-  console.log(
-    `🔑 Pool de chaves Gemini: ${GEMINI_KEYS.length} chave(s) carregada(s)`,
-  );
-}
-
-let keyIndex = 0;
-
-function getNextKey(): string {
-  if (GEMINI_KEYS.length === 0) return "";
-  const key = GEMINI_KEYS[keyIndex % GEMINI_KEYS.length];
-  const n = (keyIndex % GEMINI_KEYS.length) + 1;
-  keyIndex++;
-  console.log(`🔑 Usando chave #${n} (...${key.slice(-4)})`);
-  return key;
-}
 
 // ─────────────────────────────────────────────────────────────
 // CONFIGURAÇÃO
@@ -97,8 +73,9 @@ async function tryGemini(
     generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
   });
 
+  const keyCount = getKeyCount();
   for (const model of IMAGE_MODELS) {
-    for (let k = 0; k < GEMINI_KEYS.length; k++) {
+    for (let k = 0; k < keyCount; k++) {
       const key = getNextKey();
       console.log(`🖼️ Gemini: modelo=${model} chave=#${k + 1}`);
       try {
@@ -142,8 +119,9 @@ async function tryGemini(
 }
 
 async function tryGeminiPrompt(prompt: string): Promise<string | null> {
+  const keyCount = getKeyCount();
   for (const model of IMAGE_MODELS) {
-    for (let k = 0; k < GEMINI_KEYS.length; k++) {
+    for (let k = 0; k < keyCount; k++) {
       const key = getNextKey();
       try {
         const res = await fetch(

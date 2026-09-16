@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getNextKey, getKeyCount } from "@/lib/openrouter_keys";
 import { SYSTEM_TEXT, extractSearchQuery, searchMercadoLivre } from "@/lib/chat-system";
 
+export const maxDuration = 60;
+
 // ─────────────────────────────────────────────────────────────
 // PRIORIDADE 1 — Chat multi-IA via OpenRouter (openrouter.ai/api/v1).
 // UM endpoint no formato OpenAI expõe ChatGPT, Claude, DeepSeek e Z.ai:
@@ -44,8 +46,7 @@ const FALLBACK_CATALOG: HubModel[] = [
   { id: "~z-ai/glm-flash-latest", name: "GLM Flash Latest (Z.ai)", family: "z-ai", context: null, free: false },
 ];
 
-// "~vendor/…-latest" são aliases que sempre apontam para o mais novo —
-// a família é o vendor sem o "~".
+// Alguns IDs oficiais do catálogo usam "~"; a família é o vendor sem o prefixo.
 function modelFamily(id: string): string {
   return id.replace(/^~/, "").split("/")[0].toLowerCase();
 }
@@ -214,9 +215,11 @@ export async function POST(req: Request) {
       message?: unknown;
       history?: unknown;
       model?: unknown;
+      stream?: unknown;
     } | null;
 
     const message = typeof body?.message === "string" ? body.message : "";
+    const stream = body?.stream === true;
     if (!message || message.length > 2000) {
       return NextResponse.json({ error: "Mensagem inválida." }, { status: 400 });
     }
@@ -238,6 +241,43 @@ export async function POST(req: Request) {
 
     const messages = toOpenAiMessages(body?.history, message + marketContext);
     const origin = req.headers.get("origin") ?? "";
+
+    if (stream) {
+      const key = getNextKey();
+      const streamRes = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": origin || "https://orbit.app",
+          "X-Title": "Orbit",
+        },
+        body: JSON.stringify({ model, messages, stream: true }),
+        signal: AbortSignal.timeout(120_000),
+      });
+
+      if (!streamRes.ok || !streamRes.body) {
+        const apiMessage = await streamRes.text().catch(() => "");
+        return NextResponse.json(
+          {
+            error: friendlyError(streamRes.status, apiMessage, model),
+            code: streamRes.status === 402 ? "sem_credito" : streamRes.status === 429 ? "rate_limit" : "openrouter_erro",
+            recoverable: streamRes.status === 402 || streamRes.status === 429,
+            model,
+          },
+          { status: streamRes.status || 502 }
+        );
+      }
+
+      return new Response(streamRes.body, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
 
     // Rodízio: 401/402/429 em uma chave → tenta a próxima do pool antes de falhar
     let lastStatus = 0;

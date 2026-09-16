@@ -1624,7 +1624,13 @@ export default function BrowserShell() {
 
       {/* 🛡️ Tarefa 7 — toast de bloqueio de tracker */}
       {toast && (
-        <div className="fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full border border-emerald-500/40 bg-[#0d1f16] px-5 py-2.5 text-[13px] font-semibold text-emerald-300 shadow-2xl">
+        <div
+          className={`fixed bottom-6 left-1/2 z-[70] -translate-x-1/2 rounded-full border px-5 py-2.5 text-[13px] font-semibold shadow-2xl ${
+            toast.startsWith("⚠️ Modelo")
+              ? "border-amber-500/50 bg-[#2a1d08] text-amber-200"
+              : "border-emerald-500/40 bg-[#0d1f16] text-emerald-300"
+          }`}
+        >
           {toast}
         </div>
       )}

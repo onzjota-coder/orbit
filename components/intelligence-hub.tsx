@@ -64,7 +64,8 @@ const EXTERNAL_SITES: ExternalSite[] = [
     spec: "raciocínio e código via OpenRouter",
     url: "https://chat.deepseek.com",
     candidates: [
-      "deepseek/deepseek-chat-v4.1-flash:free",
+      "~deepseek/deepseek-pro-latest",
+      "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v3.2",
     ],
   },
@@ -74,7 +75,7 @@ const EXTERNAL_SITES: ExternalSite[] = [
     name: "Z.ai (GLM)",
     spec: "agente e código via OpenRouter",
     url: "https://chat.z.ai",
-    candidates: ["z-ai/glm-5.3-flash:free", "z-ai/glm-4.5"],
+    candidates: ["~z-ai/glm-flash-latest", "z-ai/glm-5.3-flash", "z-ai/glm-4.5"],
   },
   {
     id: "copilot",

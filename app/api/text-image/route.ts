@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const maxDuration = 60;
+
 // ─────────────────────────────────────────────────────────────
 // Geração de imagem por TEXTO — padrão: Pollinations (FLUX) grátis.
 // Com OPENAI_API_KEY no servidor (BYOK), GPT-Image vira o motor padrão.

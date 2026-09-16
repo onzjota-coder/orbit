@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const maxDuration = 60;
+
 const DAILY_LIMIT = 10;
 
 const MODELS = [
@@ -138,7 +140,14 @@ function extractSearchQuery(message: string): string | null {
 
 export async function POST(req: Request) {
   try {
-    const { message, history } = await req.json();
+    const body = (await req.json().catch(() => null)) as {
+      message?: unknown;
+      history?: unknown;
+      stream?: unknown;
+    } | null;
+
+    const message = typeof body?.message === "string" ? body.message : "";
+    const stream = body?.stream === true;
 
     if (!message || typeof message !== "string" || message.length > 2000) {
       return NextResponse.json({ error: "Mensagem inválida." }, { status: 400 });
@@ -159,10 +168,46 @@ export async function POST(req: Request) {
       }
     }
 
-    const contents = [
-      ...(Array.isArray(history) ? history.slice(-8) : []),
+    const historyItems = Array.isArray(body?.history)
+      ? ((body.history as unknown[]) as object[]).slice(-8)
+      : [];
+    const contents: object[] = [
+      ...historyItems,
       { role: "user", parts: [{ text: message + marketContext }] },
     ];
+
+    if (stream) {
+      const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS[0]}:streamGenerateContent?alt=sse`;
+      const upstream = await fetch(streamUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": process.env.GEMINI_API_KEY ?? "",
+        },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: { parts: [{ text: SYSTEM_TEXT }] },
+        }),
+      });
+
+      if (!upstream.ok || !upstream.body) {
+        const errText = await upstream.text().catch(() => "");
+        console.error("ERRO GEMINI STREAM:", upstream.status, errText.slice(0, 300));
+        return NextResponse.json(
+          { error: "A IA está com alta demanda agora. Aguarde alguns segundos e tente novamente." },
+          { status: 502 }
+        );
+      }
+
+      return new Response(upstream.body, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      });
+    }
 
     const result = await callGemini(contents);
 

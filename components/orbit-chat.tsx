@@ -9,17 +9,16 @@ import {
   readOrbitModel,
   setOrbitModel,
 } from "@/lib/orbit-model";
+import {
+  clearHistory as clearStoredHistory,
+  loadHistory,
+  saveHistory,
+  type Message,
+} from "@/lib/chat-store";
 
-const HISTORY_KEY = "orbit_chat_history";
 const HISTORY_MAX = 50;
 
-type DocumentAttachment = { content: string; request: string };
-type Msg = {
-  role: "user" | "orbit";
-  text: string;
-  image?: string;
-  document?: DocumentAttachment;
-};
+type Msg = Message;
 
 // Boas-vindas como constante estável: usada para NÃO enviar a saudação
 // como histórico da IA nem reexibi-la quando há conversa salva.
@@ -268,6 +267,7 @@ export default function OrbitChat({
   const [premiumImage, setPremiumImage] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [model, setModel] = useState("");
+  const skipHistorySaveRef = useRef(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -299,14 +299,158 @@ export default function OrbitChat({
       });
       const data = await response.json();
       if (response.ok) return data;
-    } catch {}
-    onToast?.("⚠️ respondendo com Gemini");
+      const status = response.status || "erro";
+      const detail = typeof data?.error === "string" ? data.error : "sem detalhe retornado";
+      console.error(`[ORBIT] OpenRouter falhou para ${model} (HTTP ${status}): ${detail}`);
+      onToast?.(`⚠️ Modelo ${model} indisponível no momento (erro ${status}) — respondendo com Gemini como alternativa`);
+    } catch (error) {
+      console.error(`[ORBIT] OpenRouter falhou para ${model}:`, error);
+      onToast?.(`⚠️ Modelo ${model} indisponível no momento (erro de rede) — respondendo com Gemini como alternativa`);
+    }
     const fallback = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, history }),
     });
     return fallback.json();
+  }
+
+  async function streamChat(message: string, history: unknown): Promise<{ ok: boolean; text: string; warning?: string }> {
+    const payload = { message, history, stream: true, ...(model ? { model } : {}) };
+    const endpoint = model ? "/api/chat/openrouter" : "/api/chat";
+
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        const detail = typeof data?.error === "string" ? data.error : "Erro ao conectar com a IA.";
+        return { ok: false, text: "", warning: detail };
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let text = "";
+      let sawContent = false;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split(/\r?\n\r?\n/);
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            const lines = part.split(/\r?\n/);
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed.startsWith("data:")) continue;
+              const payload = trimmed.slice(5).trim();
+              if (!payload || payload === "[DONE]") continue;
+              try {
+                const json = JSON.parse(payload) as {
+                  choices?: Array<{ delta?: { content?: string | null } }>;
+                  candidates?: Array<{ content?: { parts?: Array<{ text?: string } | null> } }>;
+                };
+
+                const openrouterText = json.choices?.[0]?.delta?.content;
+                if (typeof openrouterText === "string") {
+                  text += openrouterText;
+                  sawContent = true;
+                  setMessages((prev) => {
+                    const next = [...prev];
+                    const last = next[next.length - 1];
+                    if (last && last.role === "orbit") {
+                      last.text = text;
+                    }
+                    return next;
+                  });
+                  continue;
+                }
+
+                const geminiText = json.candidates
+                  ?.flatMap((candidate) => candidate.content?.parts ?? [])
+                  .map((part) => part?.text ?? "")
+                  .join("") ?? "";
+                if (geminiText) {
+                  text += geminiText;
+                  sawContent = true;
+                  setMessages((prev) => {
+                    const next = [...prev];
+                    const last = next[next.length - 1];
+                    if (last && last.role === "orbit") {
+                      last.text = text;
+                    }
+                    return next;
+                  });
+                }
+              } catch {
+                // Ignora payload parcial de SSE que ainda não terminou de chegar.
+              }
+            }
+          }
+        }
+
+        if (done) break;
+      }
+
+      const finalTail = buffer.trim();
+      if (finalTail) {
+        const lines = finalTail.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith("data:")) continue;
+          const payload = trimmed.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          try {
+            const json = JSON.parse(payload) as {
+              choices?: Array<{ delta?: { content?: string | null } }>;
+              candidates?: Array<{ content?: { parts?: Array<{ text?: string } | null> } }>;
+            };
+            const openrouterText = json.choices?.[0]?.delta?.content;
+            if (typeof openrouterText === "string") {
+              text += openrouterText;
+              sawContent = true;
+            }
+            const geminiText = json.candidates
+              ?.flatMap((candidate) => candidate.content?.parts ?? [])
+              .map((part) => part?.text ?? "")
+              .join("") ?? "";
+            if (geminiText) {
+              text += geminiText;
+              sawContent = true;
+            }
+          } catch {
+            // Ignora payload final incompleto.
+          }
+        }
+      }
+
+      if (text) {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last && last.role === "orbit") {
+            last.text = text;
+          }
+          return next;
+        });
+      }
+
+      if (!sawContent) {
+        return { ok: false, text: "", warning: "A resposta chegou vazia. Tente novamente." };
+      }
+
+      return { ok: true, text };
+    } catch (error) {
+      console.error("[ORBIT] Stream falhou:", error);
+      return { ok: false, text: "", warning: "A resposta foi interrompida antes de terminar. Tente novamente." };
+    }
   }
 
   // Carrega a preferência premium ao montar
@@ -331,54 +475,42 @@ export default function OrbitChat({
     setUsed(getUsage());
   }, []);
 
-  // Tarefa 3.1 — ao montar, carrega o histórico salvo (o usuário volta e a conversa está lá)
+  // Tarefa 3.1 — carrega o histórico sem bloquear a saudação inicial
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(HISTORY_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as Msg[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Tarefa 9.4 — histórico com a boas-vindas ANTIGA → descarta e mostra a atual
-          const hasOldWelcome = parsed.some(
-            (m) =>
-              m.role === "orbit" &&
-              typeof m.text === "string" &&
-              m.text.includes("Anexe a foto de um produto para gerar"),
-          );
-          // Tarefa 3.3 — histórico válido → substitui o estado (a boas-vindas não reaparece)
-          if (!hasOldWelcome) setMessages(parsed.slice(-HISTORY_MAX));
-        }
-      }
-    } catch {
-      // storage corrompido → segue com a conversa nova
-    }
-    setHistoryReady(true);
+    let cancelled = false;
+    void loadHistory().then((history) => {
+      if (cancelled) return;
+      // Tarefa 9.4 — histórico com a boas-vindas antiga é descartado.
+      const hasOldWelcome = history.some(
+        (m) =>
+          m.role === "orbit" &&
+          typeof m.text === "string" &&
+          m.text.includes("Anexe a foto de um produto para gerar"),
+      );
+      if (!hasOldWelcome && history.length > 0) setMessages(history.slice(-HISTORY_MAX));
+      setHistoryReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Tarefa 3.1 — persiste a cada mudança (máx 50 mensagens)
   useEffect(() => {
     if (!historyReady) return;
-    const trimmed = messages.slice(-HISTORY_MAX);
-    try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(trimmed));
-    } catch {
-      // Cota cheia (imagens grandes em base64) → salva apenas o texto
-      try {
-        localStorage.setItem(
-          HISTORY_KEY,
-          JSON.stringify(trimmed.map((m) => ({ role: m.role, text: m.text }))),
-        );
-      } catch {}
+    if (skipHistorySaveRef.current) {
+      skipHistorySaveRef.current = false;
+      return;
     }
+    void saveHistory(messages);
   }, [messages, historyReady]);
 
   // Tarefa 3.2 — limpa o histórico com confirmação
   function clearHistory() {
     if (!window.confirm("Limpar todo o histórico da conversa?")) return;
+    skipHistorySaveRef.current = true;
     setMessages([WELCOME]);
-    try {
-      localStorage.removeItem(HISTORY_KEY);
-    } catch {}
+    void clearStoredHistory();
   }
 
   // Tarefa 9.1 — copia a resposta do Orbit para a área de transferência (✓ 1,5s)
@@ -689,9 +821,10 @@ export default function OrbitChat({
           ...m,
           { role: "orbit", text: "Falha de conexão ao gerar a imagem." },
         ]);
+      } finally {
+        setUsed(bumpUsage());
+        setLoading(false);
       }
-      setUsed(bumpUsage());
-      setLoading(false);
       return;
     }
 
@@ -743,14 +876,22 @@ export default function OrbitChat({
 
         // Sem foto em mãos (ex.: estilo 3 em clique repetido) → pede para anexar novamente
         if (!product) {
-          setMessages((m) => [
-            ...m,
-            {
-              role: "orbit",
-              text: "Para o cenário profissional eu preciso processar a foto com IA — anexe a foto do produto novamente, por favor.",
-            },
-          ]);
-          setLoading(false);
+          try {
+            setMessages((m) => [
+              ...m,
+              {
+                role: "orbit",
+                text: "Para o cenário profissional eu preciso processar a foto com IA — anexe a foto do produto novamente, por favor.",
+              },
+            ]);
+          } catch {
+            setMessages((m) => [
+              ...m,
+              { role: "orbit", text: "Não foi possível continuar com o produto selecionado." },
+            ]);
+          } finally {
+            setLoading(false);
+          }
           return;
         }
 
@@ -1019,26 +1160,40 @@ export default function OrbitChat({
     setInput("");
     setLoading(true);
 
+    const history = messages
+      .filter((m) => m !== WELCOME)
+      .map((m) => ({
+        role: m.role === "user" ? "user" : "model",
+        parts: [{ text: m.text }],
+      }));
+
+    setMessages((m) => [...m, { role: "orbit", text: "" }]);
+
     try {
-      const history = messages
-        .filter((m) => m !== WELCOME)
-        .map((m) => ({
-          role: m.role === "user" ? "user" : "model",
-          parts: [{ text: m.text }],
-        }));
-      const data = await requestChat(text, history);
-      setMessages((m) => [
-        ...m,
-        { role: "orbit", text: data.reply ?? data.error },
-      ]);
+      const result = await streamChat(text, history);
+      if (!result.ok) {
+        setMessages((m) => {
+          const next = [...m];
+          const last = next[next.length - 1];
+          if (last && last.role === "orbit") {
+            last.text = result.warning ?? "Falha de conexão. Tente novamente.";
+          }
+          return next;
+        });
+      }
     } catch {
-      setMessages((m) => [
-        ...m,
-        { role: "orbit", text: "Falha de conexão. Tente novamente." },
-      ]);
+      setMessages((m) => {
+        const next = [...m];
+        const last = next[next.length - 1];
+        if (last && last.role === "orbit") {
+          last.text = "Falha de conexão. Tente novamente.";
+        }
+        return next;
+      });
+    } finally {
+      setUsed(bumpUsage());
+      setLoading(false);
     }
-    setUsed(bumpUsage());
-    setLoading(false);
   }
 
   return (
