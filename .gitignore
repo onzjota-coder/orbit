@@ -4,3 +4,5 @@ node_modules
 *.tsbuildinfo
 tsc_*.txt
 tsc-out.txt
+dist/
+build-output.txt

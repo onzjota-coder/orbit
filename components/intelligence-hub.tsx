@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { readOrbitModel, setOrbitModel } from "@/lib/orbit-model";
-import { RECOMMENDED_MODELS } from "@/lib/ai/openrouter";
 
 // ─────────────────────────────────────────────────────────────
 // HUB DE INTELIGÊNCIAS — conexão com TODAS as IAs.
@@ -76,7 +75,11 @@ const EXTERNAL_SITES: ExternalSite[] = [
     name: "Z.ai (GLM)",
     spec: "agente e código via OpenRouter",
     url: "https://chat.z.ai",
-    candidates: ["~z-ai/glm-flash-latest", "z-ai/glm-5.3-flash", "z-ai/glm-4.5"],
+    candidates: [
+      "~z-ai/glm-flash-latest",
+      "z-ai/glm-5.3-flash",
+      "z-ai/glm-4.5",
+    ],
   },
   {
     id: "copilot",
@@ -119,6 +122,7 @@ export default function IntelligenceHub({
     models: HubModel[];
   } | null>(null);
   const [activeModel, setActiveModel] = useState("");
+  const [showPremiumModels, setShowPremiumModels] = useState(false);
   const [openrouterConnected, setOpenrouterConnected] = useState<
     boolean | null
   >(null);
@@ -141,6 +145,13 @@ export default function IntelligenceHub({
         (data: { available?: boolean; keys?: number; models?: HubModel[] }) => {
           if (alive && data.available && Array.isArray(data.models)) {
             setOpenrouter({ keys: data.keys ?? 1, models: data.models });
+            const saved = readOrbitModel();
+            if (saved && !data.models.some((model) => model.id === saved)) {
+              setOrbitModel("");
+              setActiveModel("");
+            } else if (saved && !saved.endsWith(":free")) {
+              setShowPremiumModels(true);
+            }
           }
         },
       )
@@ -386,25 +397,36 @@ export default function IntelligenceHub({
               className="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-[13px] text-zinc-900 dark:border-white/15 dark:bg-[#0C0C0F] dark:text-zinc-100"
             >
               <option value="">🪐 Gemini nativo (grátis)</option>
-              {RECOMMENDED_MODELS.filter((m) => m.id !== "openrouter/auto").map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.label}
-                </option>
-              ))}
               {openrouter.models
-                .filter((model) =>
-                  ["openai", "anthropic", "deepseek", "z-ai"].includes(
-                    model.family,
-                  ),
-                )
-                .filter((model) => !RECOMMENDED_MODELS.some((m) => m.id === model.id))
+                .filter((model) => model.id.endsWith(":free"))
                 .map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.name}
-                    {model.free ? " · grátis" : ""}
+                    {model.name} · grátis
                   </option>
                 ))}
+              {showPremiumModels &&
+                openrouter.models
+                  .filter((model) => !model.id.endsWith(":free"))
+                  .map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name} · premium
+                    </option>
+                  ))}
             </select>
+            <button
+              type="button"
+              onClick={() => setShowPremiumModels((expanded) => !expanded)}
+              className="mt-2 text-[11.5px] font-semibold text-violet-600 hover:underline dark:text-violet-400"
+            >
+              {showPremiumModels
+                ? "Ocultar modelos premium"
+                : "💎 Ver modelos premium"}
+            </button>
+            {showPremiumModels && (
+              <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                Modelos premium exigem crédito no OpenRouter.
+              </p>
+            )}
             <p className="mt-2 text-[11.5px] text-zinc-400 dark:text-zinc-500">
               {activeModel
                 ? `Ativo: ${activeModel} — via OpenRouter.`

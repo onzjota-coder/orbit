@@ -9,6 +9,7 @@ export type Message = {
   text: string;
   image?: string;
   document?: { content: string; request: string };
+  retry?: boolean;
 };
 
 type ChatDatabase = IDBDatabase;

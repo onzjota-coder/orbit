@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getKeyCount, getNextKey } from "@/lib/gemini_keys";
+import { enhanceImagePrompt } from "@/lib/prompt-enhancer";
 
 export const maxDuration = 60;
 
@@ -64,7 +65,7 @@ async function tryGemini(
         role: "user",
         parts: [
           {
-            text: `Recrie esta foto de produto como imagem de vitrine de e-commerce: ${styleText}. Mantenha o produto EXATAMENTE igual ao da foto original (mesmo formato, cor, detalhes e marca). Retorne a imagem gerada.`,
+            text: `Recrie esta foto de produto como imagem de vitrine de e-commerce: ${enhanceImagePrompt(styleText)}. Mantenha o produto EXATAMENTE igual ao da foto original (mesmo formato, cor, detalhes e marca). Retorne a imagem gerada.`,
           },
           { inline_data: { mime_type: mimeType, data: imageBase64 } },
         ],
@@ -202,17 +203,21 @@ async function tryPollinations(
 
 export async function POST(req: Request) {
   try {
-    const { imageBase64, mimeType, style, productContext, prompt } =
+    const { imageBase64, mimeType, style, productContext, prompt, enhanced = true } =
       await req.json();
 
     if (typeof prompt === "string" && prompt.trim()) {
-      const geminiResult = await tryGeminiPrompt(prompt.trim());
+      const visualPrompt = enhanced === false ? prompt.trim() : enhanceImagePrompt(prompt);
+      const firstPolli = await tryPollinations(visualPrompt, STYLES["3"]);
+      if (firstPolli)
+        return NextResponse.json({ imageDataUrl: firstPolli, provider: "pollinations" });
+      const geminiResult = await tryGeminiPrompt(visualPrompt);
       if (geminiResult)
         return NextResponse.json({
           imageDataUrl: geminiResult,
           provider: "gemini",
         });
-      const polliResult = await tryPollinations(prompt.trim(), STYLES["3"]);
+      const polliResult = await tryPollinations(`${visualPrompt}. ${NEGATIVE}`, STYLES["3"]);
       if (polliResult)
         return NextResponse.json({
           imageDataUrl: polliResult,

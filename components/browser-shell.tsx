@@ -6,6 +6,8 @@ import Logo from "./logo";
 import { ThemeToggle } from "./theme-toggle";
 import OrbitChat from "./orbit-chat";
 import IntelligenceHub from "./intelligence-hub";
+import OrbitExternal from "./orbit-external";
+import StarfieldBackground from "./starfield-background";
 import { BLOCKED_TRACKERS } from "@/lib/blocklist";
 
 type TabType =
@@ -35,6 +37,7 @@ type Favorite = { title: string; url: string; folder?: string };
 
 // TAREFA 20 — atalhos da home com anel (ring) da cor da marca
 type HomeShortcut = Favorite & { ring: string; shadow: string };
+type HomeApp = { category: string; icon: string; title: string; url: string };
 
 // TAREFA 18 — item do histórico de navegação local
 type UrlHistoryItem = { title: string; url: string; at: number };
@@ -67,7 +70,8 @@ function isYouTubeVideoUrl(url: string): boolean {
 
 // Vídeo fixo de destaque — fallback quando a busca completa do YouTube
 // (embed listType=search, descontinuada pelo Google) não está disponível
-const YOUTUBE_FALLBACK_VIDEO = "https://www.youtube.com/embed/jfKfPfyJRdk?playsinline=1&rel=0";
+const YOUTUBE_FALLBACK_VIDEO =
+  "https://www.youtube.com/embed/jfKfPfyJRdk?playsinline=1&rel=0";
 
 function youtubeEmbedUrl(id: string, mode: "normal" | "nolads") {
   return mode === "nolads"
@@ -88,13 +92,244 @@ const DEFAULT_FAVORITES: Favorite[] = [
 // Atalhos grandes da aba home (inclui Amazon, que não é favorito)
 // TAREFA 20 — cada um traz o anel (ring) e a sombra da cor da marca
 const HOME_SHORTCUTS: HomeShortcut[] = [
-  { title: "YouTube", url: "https://www.youtube.com", ring: "ring-red-500", shadow: "hover:shadow-red-500/40" },
-  { title: "Google", url: "https://www.google.com", ring: "ring-blue-500", shadow: "hover:shadow-blue-500/40" },
-  { title: "Mercado Livre", url: "https://www.mercadolivre.com.br", ring: "ring-yellow-400", shadow: "hover:shadow-yellow-400/40" },
-  { title: "Shopee", url: "https://shopee.com.br", ring: "ring-orange-500", shadow: "hover:shadow-orange-500/40" },
-  { title: "Amazon", url: "https://www.amazon.com.br", ring: "ring-amber-500", shadow: "hover:shadow-amber-500/40" },
-  { title: "Instagram", url: "https://www.instagram.com", ring: "ring-pink-500", shadow: "hover:shadow-pink-500/40" },
-  { title: "WhatsApp Web", url: "https://web.whatsapp.com", ring: "ring-green-500", shadow: "hover:shadow-green-500/40" },
+  {
+    title: "YouTube",
+    url: "https://www.youtube.com",
+    ring: "ring-red-500",
+    shadow: "hover:shadow-red-500/40",
+  },
+  {
+    title: "Google",
+    url: "https://www.google.com",
+    ring: "ring-blue-500",
+    shadow: "hover:shadow-blue-500/40",
+  },
+  {
+    title: "Mercado Livre",
+    url: "https://www.mercadolivre.com.br",
+    ring: "ring-yellow-400",
+    shadow: "hover:shadow-yellow-400/40",
+  },
+  {
+    title: "Shopee",
+    url: "https://shopee.com.br",
+    ring: "ring-orange-500",
+    shadow: "hover:shadow-orange-500/40",
+  },
+  {
+    title: "Amazon",
+    url: "https://www.amazon.com.br",
+    ring: "ring-amber-500",
+    shadow: "hover:shadow-amber-500/40",
+  },
+  {
+    title: "Instagram",
+    url: "https://www.instagram.com",
+    ring: "ring-pink-500",
+    shadow: "hover:shadow-pink-500/40",
+  },
+  {
+    title: "WhatsApp Web",
+    url: "https://web.whatsapp.com",
+    ring: "ring-green-500",
+    shadow: "hover:shadow-green-500/40",
+  },
+];
+
+const HOME_APPS: HomeApp[] = [
+  {
+    category: "Vendas",
+    icon: "🛒",
+    title: "OLX",
+    url: "https://www.olx.com.br",
+  },
+  {
+    category: "Vendas",
+    icon: "🌐",
+    title: "AliExpress",
+    url: "https://www.aliexpress.com",
+  },
+  {
+    category: "Vendas",
+    icon: "🛍️",
+    title: "Magazine Luiza",
+    url: "https://www.magazineluiza.com.br",
+  },
+  {
+    category: "Vendas",
+    icon: "🎓",
+    title: "Hotmart",
+    url: "https://www.hotmart.com",
+  },
+  {
+    category: "Vendas",
+    icon: "⚡",
+    title: "Kiwify",
+    url: "https://kiwify.com.br",
+  },
+  {
+    category: "Vendas",
+    icon: "📚",
+    title: "Eduzz",
+    url: "https://www.eduzz.com",
+  },
+  {
+    category: "Criativo",
+    icon: "🖌️",
+    title: "Canva",
+    url: "https://www.canva.com",
+  },
+  {
+    category: "Criativo",
+    icon: "📸",
+    title: "PhotoRoom",
+    url: "https://www.photoroom.com",
+  },
+  {
+    category: "Criativo",
+    icon: "✂️",
+    title: "CapCut",
+    url: "https://www.capcut.com",
+  },
+  {
+    category: "Criativo",
+    icon: "◈",
+    title: "Figma",
+    url: "https://www.figma.com",
+  },
+  {
+    category: "Criativo",
+    icon: "🪄",
+    title: "Remove.bg",
+    url: "https://www.remove.bg",
+  },
+  {
+    category: "Criativo",
+    icon: "🖼️",
+    title: "Pixlr",
+    url: "https://pixlr.com",
+  },
+  {
+    category: "Criativo",
+    icon: "🧩",
+    title: "Freepik",
+    url: "https://www.freepik.com",
+  },
+  { category: "IA", icon: "🤖", title: "ChatGPT", url: "https://chatgpt.com" },
+  { category: "IA", icon: "🧠", title: "Claude", url: "https://claude.ai" },
+  {
+    category: "IA",
+    icon: "✨",
+    title: "Gemini",
+    url: "https://gemini.google.com",
+  },
+  {
+    category: "IA",
+    icon: "💠",
+    title: "Copilot",
+    url: "https://copilot.microsoft.com",
+  },
+  {
+    category: "IA",
+    icon: "🔎",
+    title: "Perplexity",
+    url: "https://www.perplexity.ai",
+  },
+  { category: "IA", icon: "⚡", title: "Grok", url: "https://grok.com" },
+  { category: "IA", icon: "🌐", title: "Meta AI", url: "https://www.meta.ai" },
+  {
+    category: "IA",
+    icon: "🐋",
+    title: "DeepSeek",
+    url: "https://chat.deepseek.com",
+  },
+  { category: "IA", icon: "🦁", title: "Leonardo", url: "https://leonardo.ai" },
+  { category: "IA", icon: "📝", title: "Ideogram", url: "https://ideogram.ai" },
+  {
+    category: "IA",
+    icon: "🤗",
+    title: "HuggingFace",
+    url: "https://huggingface.co",
+  },
+  {
+    category: "Social",
+    icon: "🎵",
+    title: "TikTok",
+    url: "https://www.tiktok.com",
+  },
+  {
+    category: "Social",
+    icon: "👥",
+    title: "Facebook",
+    url: "https://www.facebook.com",
+  },
+  {
+    category: "Social",
+    icon: "📌",
+    title: "Pinterest",
+    url: "https://br.pinterest.com",
+  },
+  { category: "Social", icon: "𝕏", title: "X", url: "https://x.com" },
+  {
+    category: "Social",
+    icon: "💼",
+    title: "LinkedIn",
+    url: "https://www.linkedin.com",
+  },
+  {
+    category: "Social",
+    icon: "✈️",
+    title: "Telegram",
+    url: "https://web.telegram.org",
+  },
+  {
+    category: "Social",
+    icon: "🎬",
+    title: "Kwai",
+    url: "https://www.kwai.com",
+  },
+  {
+    category: "Produtividade",
+    icon: "📓",
+    title: "Notion",
+    url: "https://www.notion.so",
+  },
+  {
+    category: "Produtividade",
+    icon: "📄",
+    title: "Google Docs",
+    url: "https://docs.google.com",
+  },
+  {
+    category: "Produtividade",
+    icon: "✉️",
+    title: "Gmail",
+    url: "https://mail.google.com",
+  },
+  {
+    category: "Produtividade",
+    icon: "🗂️",
+    title: "Google Drive",
+    url: "https://drive.google.com",
+  },
+  {
+    category: "Produtividade",
+    icon: "📋",
+    title: "Trello",
+    url: "https://trello.com",
+  },
+  {
+    category: "Produtividade",
+    icon: "📑",
+    title: "iLovePDF",
+    url: "https://www.ilovepdf.com",
+  },
+  {
+    category: "Produtividade",
+    icon: "🗜️",
+    title: "TinyPNG",
+    url: "https://tinypng.com",
+  },
 ];
 
 // Sites conhecidos que bloqueiam exibição em iframe (X-Frame-Options/CSP) →
@@ -124,6 +359,33 @@ const FRAME_BLOCKERS: { host: string; path?: string }[] = [
   { host: "discord.com" },
   { host: "tiktok.com" },
 ];
+
+const CURATED_IFRAME_HOSTS = [
+  "web.whatsapp.com",
+  "telegram.org",
+  "web.telegram.org",
+  "canva.com",
+  "notion.so",
+  "trello.com",
+  "ilovepdf.com",
+  "tinypng.com",
+  "remove.bg",
+  "pixlr.com",
+  "docs.google.com",
+  "mail.google.com",
+  "drive.google.com",
+];
+
+function isCuratedIframeUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "");
+    return CURATED_IFRAME_HOSTS.some(
+      (allowed) => host === allowed || host.endsWith(`.${allowed}`),
+    );
+  } catch {
+    return false;
+  }
+}
 
 function domainOf(url: string): string {
   try {
@@ -270,14 +532,17 @@ function isWhitelisted(url: string): boolean {
   });
 }
 
-function suspiciousBrand(url: string): { brand: string; official: string } | null {
+function suspiciousBrand(
+  url: string,
+): { brand: string; official: string } | null {
   let host: string;
   try {
     host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
   } catch {
     return null;
   }
-  if (BRAND_EXEMPTS.some((e) => host === e || host.endsWith(`.${e}`))) return null;
+  if (BRAND_EXEMPTS.some((e) => host === e || host.endsWith(`.${e}`)))
+    return null;
   for (const s of OFFICIAL_SITES) {
     const isOfficial = host === s.domain || host.endsWith(`.${s.domain}`);
     if (isOfficial) return null;
@@ -294,7 +559,9 @@ function suspiciousBrand(url: string): { brand: string; official: string } | nul
 function matchedTracker(url: string): string | null {
   try {
     const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-    return BLOCKED_TRACKERS.find((b) => host === b || host.endsWith(`.${b}`)) ?? null;
+    return (
+      BLOCKED_TRACKERS.find((b) => host === b || host.endsWith(`.${b}`)) ?? null
+    );
   } catch {
     return null;
   }
@@ -306,12 +573,16 @@ function faviconFor(url: string): string {
 
 // Home do YouTube (sem vídeo específico) → página especial com buscador interno
 function isYouTubeHome(url: string): boolean {
-  return /^https?:\/\/(www\.)?(youtube\.com\/?(\?.*)?|youtu\.be\/?)$/i.test(url.trim());
+  return /^https?:\/\/(www\.)?(youtube\.com\/?(\?.*)?|youtu\.be\/?)$/i.test(
+    url.trim(),
+  );
 }
 
 // URL especial orbit-yt-search:<termo> → aba de busca do YouTube dentro do shell
 function ytSearchTerm(url: string): string | null {
-  return url.startsWith("orbit-yt-search:") ? url.slice("orbit-yt-search:".length) : null;
+  return url.startsWith("orbit-yt-search:")
+    ? url.slice("orbit-yt-search:".length)
+    : null;
 }
 
 // YouTube: converte URLs comuns em embeds que funcionam dentro do shell
@@ -321,7 +592,8 @@ function toEmbeddableUrl(url: string): string {
   if (watch) return ytParams(`https://www.youtube.com/embed/${watch[1]}`);
   const short = url.match(/youtu\.be\/([\w-]+)/i);
   if (short) return ytParams(`https://www.youtube.com/embed/${short[1]}`);
-  if (/youtube\.com\/embed\//i.test(url) && !/[?&]origin=/.test(url)) return ytParams(url);
+  if (/youtube\.com\/embed\//i.test(url) && !/[?&]origin=/.test(url))
+    return ytParams(url);
   return url;
 }
 
@@ -329,15 +601,21 @@ function smartBarAnswer(raw: string): string | null {
   const text = raw.trim().toLowerCase();
   const percent = text.match(/^(\d+(?:[.,]\d+)?)%\s+de\s+(\d+(?:[.,]\d+)?)$/);
   if (percent) {
-    const result = (Number(percent[1].replace(",", ".")) / 100) * Number(percent[2].replace(",", "."));
+    const result =
+      (Number(percent[1].replace(",", ".")) / 100) *
+      Number(percent[2].replace(",", "."));
     return `Resultado: ${result.toLocaleString("pt-BR")}`;
   }
-  const currency = text.match(/^(\d+(?:[.,]\d+)?)\s+d[oó]lares?\s+em\s+reais?$/);
-  if (currency) return `Resultado: R$ ${(Number(currency[1].replace(",", ".")) * 5.2).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} (taxa fixa R$ 5,20)`;
+  const currency = text.match(
+    /^(\d+(?:[.,]\d+)?)\s+d[oó]lares?\s+em\s+reais?$/,
+  );
+  if (currency)
+    return `Resultado: R$ ${(Number(currency[1].replace(",", ".")) * 5.2).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} (taxa fixa R$ 5,20)`;
   if (/^[\d\s+*\-/.(),]+$/.test(text) && /[+*\-/]/.test(text)) {
     try {
       const safe = text.replace(/,/g, ".");
-      if (/^[\d\s+*\-/.]+$/.test(safe)) return `Resultado: ${Function(`"use strict"; return (${safe})`)()}`;
+      if (/^[\d\s+*\-/.]+$/.test(safe))
+        return `Resultado: ${Function(`"use strict"; return (${safe})`)()}`;
     } catch {}
   }
   return null;
@@ -345,7 +623,9 @@ function smartBarAnswer(raw: string): string | null {
 
 // TAREFA 1 — resolução do campo de URL. Texto livre NUNCA vira iframe bloqueado:
 // vai direto para o Google numa nova aba do sistema (external: true).
-function resolveUrlInput(raw: string): { url: string; title: string; external?: boolean } | null {
+function resolveUrlInput(
+  raw: string,
+): { url: string; title: string; external?: boolean } | null {
   const input = raw.trim();
   if (!input) return null;
 
@@ -358,7 +638,11 @@ function resolveUrlInput(raw: string): { url: string; title: string; external?: 
       s: `https://shopee.com.br/search?keyword=${encodeURIComponent(term)}`,
       g: `https://www.google.com/search?q=${encodeURIComponent(term)}`,
     };
-    return { url: targets[command[1].toLowerCase()], title: `${command[1].toUpperCase()}: ${term}`, external: true };
+    return {
+      url: targets[command[1].toLowerCase()],
+      title: `${command[1].toUpperCase()}: ${term}`,
+      external: true,
+    };
   }
 
   // "yt: termo" → busca do YouTube dentro do shell (o embed listType=search do
@@ -366,16 +650,22 @@ function resolveUrlInput(raw: string): { url: string; title: string; external?: 
   if (input.toLowerCase().startsWith("yt:")) {
     const term = input.slice(3).trim();
     if (!term) return null;
-    return { url: `https://www.youtube.com/results?search_query=${encodeURIComponent(term)}`, title: `YouTube: ${term}`, external: true };
+    return {
+      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(term)}`,
+      title: `YouTube: ${term}`,
+      external: true,
+    };
   }
 
   // URL completa ou domínio solto
-  const looksLikeUrl = /^https?:\/\//i.test(input) || (input.includes(".") && !/\s/.test(input));
+  const looksLikeUrl =
+    /^https?:\/\//i.test(input) || (input.includes(".") && !/\s/.test(input));
   if (looksLikeUrl) {
     const url = /^https?:\/\//i.test(input) ? input : `https://${input}`;
     // TAREFA 1 — domínio que bloqueia iframe (google, instagram, ML…) → abre
     // DIRETO em nova aba do sistema: o usuário nunca vê cadeado para sites comuns
-    if (isBlockedFrame(url)) return { url, title: domainOf(url), external: true };
+    if (isBlockedFrame(url))
+      return { url, title: domainOf(url), external: true };
     return { url, title: domainOf(url) };
   }
 
@@ -395,8 +685,15 @@ function cosmosBackground(n: number): string {
   return "#09090B";
 }
 
-function DynamicBackgroundLegacy({ mode = "cosmos" }: { mode?: "cosmos" | "simple" }) {
-  const [urls, setUrls] = useState<[string, string | null]>([cosmosBackground(1), null]);
+function DynamicBackgroundLegacy({
+  mode = "cosmos",
+}: {
+  mode?: "cosmos" | "simple";
+}) {
+  const [urls, setUrls] = useState<[string, string | null]>([
+    cosmosBackground(1),
+    null,
+  ]);
   const [visible, setVisible] = useState<0 | 1>(0);
   const visibleRef = useRef<0 | 1>(0);
   const counter = useRef(1);
@@ -437,7 +734,7 @@ function DynamicBackgroundLegacy({ mode = "cosmos" }: { mode?: "cosmos" | "simpl
               // Tarefa 8: nível Brave — imagem visível, porém sóbria em ambos os temas
             }}
           />
-        ) : null
+        ) : null,
       )}
       {/* Overlay escuro (estilo Brave: permanece escuro também no tema claro) */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/55 to-black/75" />
@@ -445,43 +742,240 @@ function DynamicBackgroundLegacy({ mode = "cosmos" }: { mode?: "cosmos" | "simpl
   );
 }
 
-function DynamicBackground() {
-  return <div className="absolute inset-0 bg-[#FAFAFA] dark:bg-[#09090B]" aria-hidden="true" />;
+function DynamicBackground({
+  mode = "cosmos",
+  ghost = false,
+}: {
+  mode?: "cosmos" | "simple";
+  ghost?: boolean;
+}) {
+  const { theme } = useTheme();
+  const [images, setImages] = useState<string[]>([]);
+  const [imageSlots, setImageSlots] = useState<[string | null, string | null]>([
+    null,
+    null,
+  ]);
+  const [visibleSlot, setVisibleSlot] = useState<0 | 1>(0);
+  const [imageFailed, setImageFailed] = useState(false);
+  const imageSlotRef = useRef<0 | 1>(0);
+  const imageIndexRef = useRef(-1);
+  const isLight = theme === "light";
+  const isSimple = mode === "simple";
+
+  useEffect(() => {
+    if (isSimple || ghost) return;
+    let cancelled = false;
+    fetch("/api/pixabay")
+      .then((response) => response.json())
+      .then((data: { enabled?: boolean; images?: string[] }) => {
+        if (!cancelled && data.enabled && data.images?.length)
+          setImages(data.images);
+      })
+      .catch(() => {
+        // O canvas continua sendo o fundo principal quando a API falha.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ghost, isSimple]);
+
+  useEffect(() => {
+    if (!images.length || isSimple || ghost) return;
+    let sessionIndex = -1;
+    try {
+      const saved = sessionStorage.getItem("orbit_pixabay_index");
+      sessionIndex = saved ? Number.parseInt(saved, 10) : -1;
+    } catch {}
+    const nextIndex =
+      Number.isInteger(sessionIndex) && sessionIndex >= 0
+        ? sessionIndex % images.length
+        : Math.floor(Math.random() * images.length);
+    imageIndexRef.current = nextIndex;
+    try {
+      sessionStorage.setItem("orbit_pixabay_index", String(nextIndex));
+    } catch {}
+
+    function preloadAndShow(url: string) {
+      const image = new Image();
+      image.onload = () => {
+        const hiddenSlot: 0 | 1 = imageSlotRef.current === 0 ? 1 : 0;
+        setImageSlots((current) => {
+          const next: [string | null, string | null] = [current[0], current[1]];
+          next[hiddenSlot] = url;
+          return next;
+        });
+        imageSlotRef.current = hiddenSlot;
+        setVisibleSlot(hiddenSlot);
+      };
+      image.onerror = () => setImageFailed(true);
+      image.src = url;
+    }
+
+    preloadAndShow(images[nextIndex]);
+    const timer = window.setInterval(
+      () => {
+        imageIndexRef.current = (imageIndexRef.current + 1) % images.length;
+        preloadAndShow(images[imageIndexRef.current]);
+      },
+      10 * 60 * 1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [ghost, images, isSimple]);
+
+  const showPhoto =
+    !imageFailed && imageSlots.some(Boolean) && !isSimple && !ghost;
+  const overlay = ghost
+    ? "bg-black/95"
+    : isLight
+      ? "bg-gradient-to-b from-white/55 via-white/45 to-white/65"
+      : "bg-gradient-to-b from-black/65 via-black/60 to-black/80";
+
+  return (
+    <div
+      className={`absolute inset-0 overflow-hidden ${isLight ? "bg-[#dbe5f4]" : "bg-[#050816]"}`}
+      aria-hidden="true"
+    >
+      <StarfieldBackground
+        opacity={isLight ? 0.24 : ghost ? 0.42 : 0.78}
+        minimal={ghost || isSimple}
+      />
+      {showPhoto &&
+        imageSlots.map((url, index) =>
+          url ? (
+            <div
+              key={`${url}-${index}`}
+              className="absolute inset-0 bg-cover bg-center opacity-0 transition-opacity duration-[1800ms]"
+              style={{
+                backgroundImage: `url("${url}")`,
+                opacity: visibleSlot === index ? (isLight ? 0.24 : 0.3) : 0,
+              }}
+            />
+          ) : null,
+        )}
+      <div className={`absolute inset-0 ${overlay}`} />
+    </div>
+  );
 }
 
-function HomeGrid({ onOpen, onIntelligence, username, history = [], background = "cosmos" }: { onOpen: (url: string, title: string) => void; onIntelligence: () => void; username?: string; history?: UrlHistoryItem[]; background?: "cosmos" | "simple" }) {
+function HomeGrid({
+  onOpen,
+  onIntelligence,
+  username,
+  history = [],
+  background = "cosmos",
+  ghost = false,
+}: {
+  onOpen: (url: string, title: string) => void;
+  onIntelligence: () => void;
+  username?: string;
+  history?: UrlHistoryItem[];
+  background?: "cosmos" | "simple";
+  ghost?: boolean;
+}) {
+  const [connectedIas, setConnectedIas] = useState(1);
+
+  useEffect(() => {
+    fetch("/api/status/openrouter")
+      .then((response) => response.json())
+      .then((data: { connected?: boolean }) =>
+        setConnectedIas(data.connected ? 2 : 1),
+      )
+      .catch(() => setConnectedIas(1));
+  }, []);
+
   return (
     <div className="relative h-full overflow-hidden">
-      <DynamicBackground />
+      <DynamicBackground mode={background} ghost={ghost} />
       <div className="scroll-slim relative z-10 flex h-full items-center justify-center overflow-y-auto p-8">
-        {username && <p className="absolute left-6 top-6 text-sm font-medium text-white/80">{new Date().getHours() < 12 ? "Bom dia" : new Date().getHours() < 18 ? "Boa tarde" : "Boa noite"}, {username} 🌤️</p>}
-        <div className="grid w-full max-w-3xl grid-cols-2 gap-6 justify-center sm:grid-cols-3 lg:grid-cols-4">
+        {username && (
+          <p className="absolute left-6 top-6 text-sm font-medium text-white/80">
+            {new Date().getHours() < 12
+              ? "Bom dia"
+              : new Date().getHours() < 18
+                ? "Boa tarde"
+                : "Boa noite"}
+            , {username} 🌤️
+          </p>
+        )}
+        <div className="grid w-full max-w-6xl grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {/* Card em destaque — HUB DE INTELIGÊNCIAS (borda degradê violeta) */}
-          <div className="min-h-[110px] rounded-3xl border border-white/20 bg-zinc-900 p-[1.5px] shadow-lg shadow-black/25 transition hover:-translate-y-1">
+          <div className="col-span-2 min-h-[150px] rounded-3xl border border-violet-300/30 bg-zinc-900 p-[1.5px] shadow-lg shadow-black/25 transition hover:-translate-y-1 sm:col-span-2">
             <button
               type="button"
               onClick={onIntelligence}
-              className="flex h-[117px] w-[157px] flex-col items-center justify-center gap-2 rounded-[10.5px] bg-black/85 backdrop-blur-md transition hover:bg-zinc-900/85"
+              className="flex h-[150px] w-full flex-col items-center justify-center gap-2 rounded-[10.5px] bg-black/85 backdrop-blur-md transition hover:bg-zinc-900/85"
             >
               <span className="text-3xl">🧠</span>
               <span className="text-[13px] font-semibold text-white">
                 Inteligências
               </span>
+              <span className="text-[11px] text-violet-200/80">
+                {connectedIas} IAs conectadas
+              </span>
             </button>
           </div>
-          {HOME_SHORTCUTS.map((s) => (
-            <button
-              key={s.url}
-              type="button"
-              onClick={() => onOpen(s.url, s.title)}
-              className="group flex min-h-[110px] h-[120px] w-[160px] flex-col items-center justify-center gap-3 rounded-3xl border border-white/20 bg-white/10 p-4 backdrop-blur-md transition hover:-translate-y-1 hover:border-white/40 hover:bg-white/20 hover:shadow-lg hover:shadow-black/30"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={faviconFor(s.url)} alt="" className="h-10 w-10 rounded" />
-              <span className="text-sm font-medium text-white">{s.title}</span>
-              <span className="text-[10px] text-white/60">· {history.filter((h) => h.url === s.url && Date.now() - h.at < 7 * 86400000).length} visitas na semana</span>
-            </button>
-          ))}
+          <div className="col-span-2 grid grid-cols-2 justify-center gap-4 sm:col-span-3 sm:grid-cols-3 lg:col-span-4 lg:grid-cols-4">
+            {HOME_SHORTCUTS.map((s) => (
+              <button
+                key={s.url}
+                type="button"
+                onClick={() => onOpen(s.url, s.title)}
+                className="group flex h-[120px] w-full flex-col items-center justify-center gap-3 rounded-3xl border border-white/20 bg-white/10 p-4 backdrop-blur-md transition hover:-translate-y-1 hover:border-white/40 hover:bg-white/20 hover:shadow-lg hover:shadow-black/30"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={faviconFor(s.url)}
+                  alt=""
+                  className="h-10 w-10 rounded"
+                />
+                <span className="text-sm font-medium text-white">
+                  {s.title}
+                </span>
+                <span className="text-[10px] text-white/60">
+                  ·{" "}
+                  {
+                    history.filter(
+                      (h) =>
+                        h.url === s.url && Date.now() - h.at < 7 * 86400000,
+                    ).length
+                  }{" "}
+                  visitas na semana
+                </span>
+              </button>
+            ))}
+          </div>
+          {Array.from(new Set(HOME_APPS.map((app) => app.category))).map(
+            (category) => (
+              <section
+                key={category}
+                className="col-span-2 mt-8 sm:col-span-3 lg:col-span-4"
+              >
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-white/60">
+                  {category}
+                </h2>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                  {HOME_APPS.filter((app) => app.category === category).map(
+                    (app) => (
+                      <button
+                        key={app.url}
+                        type="button"
+                        onClick={() => onOpen(app.url, app.title)}
+                        className="group flex h-[108px] w-full flex-col items-center justify-center gap-2 rounded-3xl border border-white/15 bg-black/25 p-3 text-white backdrop-blur-md transition hover:-translate-y-1 hover:border-white/35 hover:bg-white/10 hover:shadow-lg hover:shadow-black/25"
+                      >
+                        <span
+                          className="text-3xl leading-none"
+                          aria-hidden="true"
+                        >
+                          {app.icon}
+                        </span>
+                        <span className="text-xs font-medium">{app.title}</span>
+                      </button>
+                    ),
+                  )}
+                </div>
+              </section>
+            ),
+          )}
         </div>
       </div>
     </div>
@@ -535,10 +1029,19 @@ function ScamGateCard({
           Alerta de segurança
         </p>
         <p className="mt-2 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-300">
-          O domínio <span className="font-mono font-semibold text-zinc-900 dark:text-white">{domainOf(url)}</span> usa
-          o nome <span className="font-semibold text-zinc-900 dark:text-white">“{brand}”</span> sem ser o site oficial{" "}
-          <span className="font-mono text-zinc-900 dark:text-white">{official}</span>. Golpes comuns: produtos falsos e
-          roubo de login.
+          O domínio{" "}
+          <span className="font-mono font-semibold text-zinc-900 dark:text-white">
+            {domainOf(url)}
+          </span>{" "}
+          usa o nome{" "}
+          <span className="font-semibold text-zinc-900 dark:text-white">
+            “{brand}”
+          </span>{" "}
+          sem ser o site oficial{" "}
+          <span className="font-mono text-zinc-900 dark:text-white">
+            {official}
+          </span>
+          . Golpes comuns: produtos falsos e roubo de login.
         </p>
         <div className="mt-6 flex flex-col items-center justify-center gap-2 sm:flex-row">
           <button
@@ -578,20 +1081,27 @@ function GuardedFrame({
   title,
   reloadKey,
   ghost,
+  knownBlocked = false,
+  onOpenOutside,
+  onBack,
 }: {
   tabId: string;
   url: string;
   title: string;
   reloadKey: number;
   ghost?: boolean;
+  knownBlocked?: boolean;
+  onOpenOutside: () => void;
+  onBack: () => void;
 }) {
-  const [status, setStatus] = useState<"loading" | "ok" | "blocked">("loading");
+  const [status, setStatus] = useState<"loading" | "ok" | "blocked">(
+    knownBlocked ? "blocked" : "loading",
+  );
   // TAREFA 2 — o spinner só aparece DENTRO da aba se o conteúdo NÃO carregar
   // em 1,5s (nunca antes): o clique parece instantâneo.
   const [spinnerVisible, setSpinnerVisible] = useState(false);
-
   useEffect(() => {
-    setStatus("loading");
+    setStatus(knownBlocked ? "blocked" : "loading");
     setSpinnerVisible(false);
     // 1,5s: só então o spinner entra em cena (se ainda estiver carregando)
     const spinnerTimer = window.setTimeout(() => setSpinnerVisible(true), 1500);
@@ -604,9 +1114,19 @@ function GuardedFrame({
       window.clearTimeout(spinnerTimer);
       window.clearTimeout(timer);
     };
-  }, [url, reloadKey]);
+  }, [knownBlocked, url, reloadKey]);
 
-  if (status === "blocked") return <BlockedNotice url={url} />;
+  if (status === "blocked") {
+    return (
+      <OrbitExternal
+        url={url}
+        title={title}
+        onOpenOutside={onOpenOutside}
+        onTryInside={() => setStatus("loading")}
+        onBack={onBack}
+      />
+    );
+  }
 
   return (
     <div className="relative h-full w-full bg-white">
@@ -631,22 +1151,40 @@ function GuardedFrame({
 // ─────────────────────────────────────────────────────────────
 // MELHORIA 3 — Página especial do YouTube (buscador + vídeos NO shell)
 // ─────────────────────────────────────────────────────────────
-function YouTubeHome({ onSearch, onToast }: { onSearch: (term: string) => void; onToast: (message: string) => void }) {
+function YouTubeHome({
+  onSearch,
+  onToast,
+}: {
+  onSearch: (term: string) => void;
+  onToast: (message: string) => void;
+}) {
   const [term, setTerm] = useState("");
   const [mode, setMode] = useState<"normal" | "nolads">("normal");
   const [videoInput, setVideoInput] = useState("");
   const [videoId, setVideoId] = useState<string | null>(null);
   useEffect(() => {
-    try { setMode(localStorage.getItem("orbit_yt_mode") === "nolads" ? "nolads" : "normal"); } catch {}
+    try {
+      setMode(
+        localStorage.getItem("orbit_yt_mode") === "nolads"
+          ? "nolads"
+          : "normal",
+      );
+    } catch {}
   }, []);
   function toggleMode(next: "normal" | "nolads") {
     setMode(next);
-    try { localStorage.setItem("orbit_yt_mode", next); } catch {}
+    try {
+      localStorage.setItem("orbit_yt_mode", next);
+    } catch {}
   }
   function extractVideoId(value: string) {
     try {
       const url = new URL(value.trim());
-      return url.searchParams.get("v") || url.pathname.split("/").filter(Boolean).pop() || null;
+      return (
+        url.searchParams.get("v") ||
+        url.pathname.split("/").filter(Boolean).pop() ||
+        null
+      );
     } catch {
       return null;
     }
@@ -688,33 +1226,99 @@ function YouTubeHome({ onSearch, onToast }: { onSearch: (term: string) => void; 
       {/* Vídeos DENTRO do shell — playlist em destaque tocando direto aqui */}
       <div className="w-full max-w-5xl">
         <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="text-[13px] font-medium text-zinc-300">Assistir um vídeo dentro do Orbit</span>
+          <span className="text-[13px] font-medium text-zinc-300">
+            Assistir um vídeo dentro do Orbit
+          </span>
           <button
             type="button"
-            onClick={() => { toggleMode("nolads"); window.open("https://piped.video/", "_blank", "noopener,noreferrer"); onToast("🧪 Frontend alternativo da comunidade — sem anúncios"); }}
+            onClick={() => {
+              toggleMode("nolads");
+              window.open(
+                "https://piped.video/",
+                "_blank",
+                "noopener,noreferrer",
+              );
+              onToast("🧪 Frontend alternativo da comunidade — sem anúncios");
+            }}
             className="shrink-0 text-[12px] text-zinc-400 underline decoration-zinc-600 underline-offset-4 transition hover:text-white"
           >
-            {mode === "normal" ? "🧪 Sem anúncios (experimental)" : "Voltar ao YouTube normal"}
+            {mode === "normal"
+              ? "🧪 Sem anúncios (experimental)"
+              : "Voltar ao YouTube normal"}
           </button>
         </div>
-        <form onSubmit={(event) => { event.preventDefault(); const id = extractVideoId(videoInput); if (id) setVideoId(id); else onToast("Cole um link válido do YouTube (watch?v=...)"); }} className="mt-5 flex w-full max-w-2xl gap-2">
-          <input value={videoInput} onChange={(event) => setVideoInput(event.target.value)} placeholder="Cole um link do YouTube (watch?v=...)" className="h-11 min-w-0 flex-1 rounded-full border border-white/15 bg-white/[0.06] px-5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-white/40" />
-          <button type="submit" className="rounded-xl bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/20">Assistir</button>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const id = extractVideoId(videoInput);
+            if (id) setVideoId(id);
+            else onToast("Cole um link válido do YouTube (watch?v=...)");
+          }}
+          className="mt-5 flex w-full max-w-2xl gap-2"
+        >
+          <input
+            value={videoInput}
+            onChange={(event) => setVideoInput(event.target.value)}
+            placeholder="Cole um link do YouTube (watch?v=...)"
+            className="h-11 min-w-0 flex-1 rounded-full border border-white/15 bg-white/[0.06] px-5 text-sm text-white outline-none placeholder:text-zinc-500 focus:border-white/40"
+          />
+          <button
+            type="submit"
+            className="rounded-xl bg-white/10 px-4 text-xs font-semibold text-white hover:bg-white/20"
+          >
+            Assistir
+          </button>
         </form>
-        {videoId ? <div className="mt-5 w-full max-w-3xl overflow-hidden rounded-3xl border border-white/10"><iframe key={`${videoId}-${mode}`} src={youtubeEmbedUrl(videoId, mode)} title="Vídeo do YouTube" className="aspect-video w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="no-referrer" onError={() => { if (mode === "nolads") { toggleMode("normal"); onToast("Frontend experimental indisponível; voltando ao YouTube normal."); } }} /></div> : <p className="mt-5 text-center text-xs text-zinc-500">💡 Dica: cole o link de qualquer vídeo para assistir dentro do Orbit. Buscas abrem no YouTube real.</p>}
-        {mode === "nolads" && <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">🧪 Experimental — servidores da comunidade, podem ficar instáveis.</p>}
+        {videoId ? (
+          <div className="mt-5 w-full max-w-3xl overflow-hidden rounded-3xl border border-white/10">
+            <iframe
+              key={`${videoId}-${mode}`}
+              src={youtubeEmbedUrl(videoId, mode)}
+              title="Vídeo do YouTube"
+              className="aspect-video w-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+              referrerPolicy="no-referrer"
+              onError={() => {
+                if (mode === "nolads") {
+                  toggleMode("normal");
+                  onToast(
+                    "Frontend experimental indisponível; voltando ao YouTube normal.",
+                  );
+                }
+              }}
+            />
+          </div>
+        ) : (
+          <p className="mt-5 text-center text-xs text-zinc-500">
+            💡 Dica: cole o link de qualquer vídeo para assistir dentro do
+            Orbit. Buscas abrem no YouTube real.
+          </p>
+        )}
+        {mode === "nolads" && (
+          <p className="mt-3 rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+            🧪 Experimental — servidores da comunidade, podem ficar instáveis.
+          </p>
+        )}
       </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-type YoutubeSearchResult = { videoId: string; title: string; channel: string; thumbnail: string; publishedAt: string };
+type YoutubeSearchResult = {
+  videoId: string;
+  title: string;
+  channel: string;
+  thumbnail: string;
+  publishedAt: string;
+};
 
 function YouTubeRealHome({ onToast }: { onToast: (message: string) => void }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<YoutubeSearchResult[]>([]);
-  const [selectedVideo, setSelectedVideo] = useState<YoutubeSearchResult | null>(null);
+  const [selectedVideo, setSelectedVideo] =
+    useState<YoutubeSearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -726,10 +1330,14 @@ function YouTubeRealHome({ onToast }: { onToast: (message: string) => void }) {
     setError(null);
     setSelectedVideo(null);
     try {
-      const response = await fetch("/api/youtube?q=" + encodeURIComponent(query));
+      const response = await fetch(
+        "/api/youtube?q=" + encodeURIComponent(query),
+      );
       const data = await response.json();
       if (data.error === "sem_chave") {
-        setError(data.instrucoes ?? "Configure YOUTUBE_API_KEY para pesquisar.");
+        setError(
+          data.instrucoes ?? "Configure YOUTUBE_API_KEY para pesquisar.",
+        );
         setResults([]);
       } else if (!response.ok) {
         setError(data.error ?? "Não foi possível buscar vídeos agora.");
@@ -745,7 +1353,10 @@ function YouTubeRealHome({ onToast }: { onToast: (message: string) => void }) {
   }
 
   const relativeDate = (date: string) => {
-    const days = Math.max(0, Math.floor((Date.now() - new Date(date).getTime()) / 86400000));
+    const days = Math.max(
+      0,
+      Math.floor((Date.now() - new Date(date).getTime()) / 86400000),
+    );
     if (days < 1) return "hoje";
     if (days < 30) return "há " + days + (days === 1 ? " dia" : " dias");
     const months = Math.floor(days / 30);
@@ -756,11 +1367,136 @@ function YouTubeRealHome({ onToast }: { onToast: (message: string) => void }) {
     <div className="scroll-slim h-full overflow-y-auto bg-[#0F0F0F] p-6 text-white sm:p-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-8 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3"><span className="flex h-10 w-14 items-center justify-center rounded-xl bg-red-600"><svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z" /></svg></span><span className="text-2xl font-semibold">YouTube</span></div>
-          <div className="flex items-center gap-2"><button type="button" onClick={() => { window.open("https://www.youtube.com", "_blank", "noopener,noreferrer"); onToast("🌐 YouTube real aberto em nova aba"); }} className="rounded-xl border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:bg-white/10">Abrir no YouTube ↗</button><button type="button" onClick={() => { window.open("https://piped.video", "_blank", "noopener,noreferrer"); onToast("🧪 Frontend alternativo da comunidade — sem anúncios"); }} className="rounded-xl border border-white/10 px-3 py-2 text-xs text-zinc-400 hover:bg-white/10">🧪 Zero anúncios</button></div>
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-14 items-center justify-center rounded-xl bg-red-600">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </span>
+            <span className="text-2xl font-semibold">YouTube</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                window.open(
+                  "https://www.youtube.com",
+                  "_blank",
+                  "noopener,noreferrer",
+                );
+                onToast("🌐 YouTube real aberto em nova aba");
+              }}
+              className="rounded-xl border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:bg-white/10"
+            >
+              Abrir no YouTube ↗
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                window.open(
+                  "https://piped.video",
+                  "_blank",
+                  "noopener,noreferrer",
+                );
+                onToast("🧪 Frontend alternativo da comunidade — sem anúncios");
+              }}
+              className="rounded-xl border border-white/10 px-3 py-2 text-xs text-zinc-400 hover:bg-white/10"
+            >
+              🧪 Zero anúncios
+            </button>
+          </div>
         </div>
-        <form onSubmit={searchYouTube} className="mx-auto mb-8 flex w-full max-w-2xl gap-2"><input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Buscar vídeos no YouTube…" className="h-12 min-w-0 flex-1 rounded-full border border-white/15 bg-white/[0.06] px-5 text-sm outline-none placeholder:text-zinc-500 focus:border-white/40" /><button type="submit" disabled={loading} className="rounded-xl bg-red-600 px-5 text-sm font-semibold hover:bg-red-500 disabled:opacity-50">{loading ? "Buscando…" : "Buscar"}</button></form>
-        {selectedVideo ? <div><button type="button" onClick={() => setSelectedVideo(null)} className="mb-4 rounded-xl border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:bg-white/10">← Voltar aos resultados</button><h2 className="text-xl font-semibold">{selectedVideo.title}</h2><p className="mb-4 text-sm text-zinc-400">{selectedVideo.channel}</p><div className="overflow-hidden rounded-3xl border border-white/10"><iframe src={"https://www.youtube.com/embed/" + selectedVideo.videoId + "?playsinline=1&rel=0"} title={selectedVideo.title} className="aspect-video w-full" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="no-referrer" /></div></div> : error ? <div className="mx-auto max-w-xl rounded-3xl border border-amber-400/30 bg-amber-400/10 p-6 text-sm text-amber-100"><h2 className="mb-3 text-lg font-semibold">Configure a busca do YouTube</h2><p className="mb-4 leading-relaxed">{error}</p><a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noreferrer" className="font-semibold underline">Abrir console.cloud.google.com →</a></div> : results.length ? <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{results.map((video) => <button key={video.videoId} type="button" onClick={() => setSelectedVideo(video)} className="group text-left"><div className="overflow-hidden rounded-xl bg-zinc-900"><img src={video.thumbnail} alt="" className="aspect-video w-full object-cover transition group-hover:scale-105" /></div><h2 className="mt-3 line-clamp-2 text-sm font-semibold leading-snug">{video.title}</h2><p className="mt-1 text-xs text-zinc-400">{video.channel} · {relativeDate(video.publishedAt)}</p></button>)}</div> : <p className="text-center text-xs text-zinc-500">Pesquise um vídeo para ver thumbnails e assistir dentro do Orbit.</p>}
+        <form
+          onSubmit={searchYouTube}
+          className="mx-auto mb-8 flex w-full max-w-2xl gap-2"
+        >
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Buscar vídeos no YouTube…"
+            className="h-12 min-w-0 flex-1 rounded-full border border-white/15 bg-white/[0.06] px-5 text-sm outline-none placeholder:text-zinc-500 focus:border-white/40"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-xl bg-red-600 px-5 text-sm font-semibold hover:bg-red-500 disabled:opacity-50"
+          >
+            {loading ? "Buscando…" : "Buscar"}
+          </button>
+        </form>
+        {selectedVideo ? (
+          <div>
+            <button
+              type="button"
+              onClick={() => setSelectedVideo(null)}
+              className="mb-4 rounded-xl border border-white/15 px-3 py-2 text-xs text-zinc-300 hover:bg-white/10"
+            >
+              ← Voltar aos resultados
+            </button>
+            <h2 className="text-xl font-semibold">{selectedVideo.title}</h2>
+            <p className="mb-4 text-sm text-zinc-400">
+              {selectedVideo.channel}
+            </p>
+            <div className="overflow-hidden rounded-3xl border border-white/10">
+              <iframe
+                src={
+                  "https://www.youtube.com/embed/" +
+                  selectedVideo.videoId +
+                  "?playsinline=1&rel=0"
+                }
+                title={selectedVideo.title}
+                className="aspect-video w-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          </div>
+        ) : error ? (
+          <div className="mx-auto max-w-xl rounded-3xl border border-amber-400/30 bg-amber-400/10 p-6 text-sm text-amber-100">
+            <h2 className="mb-3 text-lg font-semibold">
+              Configure a busca do YouTube
+            </h2>
+            <p className="mb-4 leading-relaxed">{error}</p>
+            <a
+              href="https://console.cloud.google.com/apis/library/youtube.googleapis.com"
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold underline"
+            >
+              Abrir console.cloud.google.com →
+            </a>
+          </div>
+        ) : results.length ? (
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {results.map((video) => (
+              <button
+                key={video.videoId}
+                type="button"
+                onClick={() => setSelectedVideo(video)}
+                className="group text-left"
+              >
+                <div className="overflow-hidden rounded-xl bg-zinc-900">
+                  <img
+                    src={video.thumbnail}
+                    alt=""
+                    className="aspect-video w-full object-cover transition group-hover:scale-105"
+                  />
+                </div>
+                <h2 className="mt-3 line-clamp-2 text-sm font-semibold leading-snug">
+                  {video.title}
+                </h2>
+                <p className="mt-1 text-xs text-zinc-400">
+                  {video.channel} · {relativeDate(video.publishedAt)}
+                </p>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-center text-xs text-zinc-500">
+            Pesquise um vídeo para ver thumbnails e assistir dentro do Orbit.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -778,10 +1514,13 @@ function YouTubeSearchFallback({ term }: { term: string }) {
             <path d="M8 5v14l11-7z" />
           </svg>
         </span>
-        <span className="max-w-[320px] truncate text-xl font-semibold text-white">YouTube: {term}</span>
+        <span className="max-w-[320px] truncate text-xl font-semibold text-white">
+          YouTube: {term}
+        </span>
       </div>
       <p className="max-w-md text-center text-[13px] leading-relaxed text-zinc-400">
-        🔍 A busca completa está em breve. Enquanto isso, curta o vídeo em destaque:
+        🔍 A busca completa está em breve. Enquanto isso, curta o vídeo em
+        destaque:
       </p>
       <div className="w-full max-w-3xl overflow-hidden rounded-xl border border-white/10">
         <iframe
@@ -806,7 +1545,9 @@ export default function BrowserShell() {
   const [activeId, setActiveId] = useState<string>(ORBIT_TAB_ID);
   const [favorites, setFavorites] = useState<Favorite[]>(DEFAULT_FAVORITES);
   const [urlInput, setUrlInput] = useState("");
-  const [histories, setHistories] = useState<Record<string, { stack: string[]; index: number }>>({});
+  const [histories, setHistories] = useState<
+    Record<string, { stack: string[]; index: number }>
+  >({});
   const [reloadKey, setReloadKey] = useState(0);
   const [ghostMode, setGhostMode] = useState(false); // MODO FANTASMA: apenas state, NUNCA persistir
   // TAREFA 2 — o modal de golpe pré-abertura foi REMOVIDO: o aviso agora vive
@@ -820,7 +1561,10 @@ export default function BrowserShell() {
   const [urlHistory, setUrlHistory] = useState<UrlHistoryItem[]>([]);
   // TAREFA 6/7 — Ctrl+Tab (alternar) e Ctrl+Shift+T (reabrir aba fechada)
   const [lastActiveId, setLastActiveId] = useState<string>(ORBIT_TAB_ID);
-  const [closedTab, setClosedTab] = useState<{ tab: Tab; index: number } | null>(null);
+  const [closedTab, setClosedTab] = useState<{
+    tab: Tab;
+    index: number;
+  } | null>(null);
   // TAREFA 12 — sidebar de IA persistente (orbit_sidebar)
   const [sidebarOpen, setSidebarOpen] = useState(false);
   // TAREFA 3 — favoritos colapsáveis no mobile
@@ -846,7 +1590,13 @@ export default function BrowserShell() {
   const [favName, setFavName] = useState("");
   const [favUrl, setFavUrl] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState({ homepage: "home", locale: "pt-BR", premium: false, username: "", background: "cosmos" as "cosmos" | "simple" });
+  const [settings, setSettings] = useState({
+    homepage: "home",
+    locale: "pt-BR",
+    premium: false,
+    username: "",
+    background: "cosmos" as "cosmos" | "simple",
+  });
   const [splash, setSplash] = useState(true);
 
   // Carrega abas e favoritos salvos no localStorage
@@ -859,14 +1609,22 @@ export default function BrowserShell() {
           // A aba Orbit é fixa: reinsere se ausente
           const withOrbit = parsed.some((t) => t.id === ORBIT_TAB_ID)
             ? parsed
-            : [{ id: ORBIT_TAB_ID, title: "Orbit", type: "orbit-chat" as TabType }, ...parsed];
+            : [
+                {
+                  id: ORBIT_TAB_ID,
+                  title: "Orbit",
+                  type: "orbit-chat" as TabType,
+                },
+                ...parsed,
+              ];
           setTabs(withOrbit);
         }
       }
       const rawFavs = localStorage.getItem("orbit_favorites");
       if (rawFavs) {
         const parsedFavs = JSON.parse(rawFavs) as Favorite[];
-        if (Array.isArray(parsedFavs) && parsedFavs.length > 0) setFavorites(parsedFavs);
+        if (Array.isArray(parsedFavs) && parsedFavs.length > 0)
+          setFavorites(parsedFavs);
       }
     } catch {
       // storage corrompido → segue com os padrões
@@ -879,7 +1637,10 @@ export default function BrowserShell() {
     if (!hydrated.current) return;
     try {
       // Abas fantasma jamais são persistidas
-      localStorage.setItem("orbit_tabs", JSON.stringify(tabs.filter((t) => !t.ghost)));
+      localStorage.setItem(
+        "orbit_tabs",
+        JSON.stringify(tabs.filter((t) => !t.ghost)),
+      );
     } catch {}
   }, [tabs]);
 
@@ -896,7 +1657,11 @@ export default function BrowserShell() {
     try {
       setSidebarOpen(localStorage.getItem(SIDEBAR_KEY) === "true");
       const savedSettings = localStorage.getItem("orbit_settings");
-      if (savedSettings) setSettings((current) => ({ ...current, ...JSON.parse(savedSettings) }));
+      if (savedSettings)
+        setSettings((current) => ({
+          ...current,
+          ...JSON.parse(savedSettings),
+        }));
     } catch {}
     setUrlHistory(readUrlHistory());
   }, []);
@@ -943,7 +1708,10 @@ export default function BrowserShell() {
         closeTab(activeId);
         return;
       }
-      if (mod && (e.key === "l" || e.key === "L" || e.key === "k" || e.key === "K")) {
+      if (
+        mod &&
+        (e.key === "l" || e.key === "L" || e.key === "k" || e.key === "K")
+      ) {
         e.preventDefault();
         urlRef.current?.focus();
         urlRef.current?.select();
@@ -962,7 +1730,11 @@ export default function BrowserShell() {
   const activeTab = tabs.find((t) => t.id === activeId) ?? tabs[0];
   const activeHistory = activeTab ? histories[activeTab.id] : undefined;
   const canBack =
-    !!activeTab && activeTab.type === "iframe" && !activeTab.ghost && !!activeHistory && activeHistory.index > 0;
+    !!activeTab &&
+    activeTab.type === "iframe" &&
+    !activeTab.ghost &&
+    !!activeHistory &&
+    activeHistory.index > 0;
   const canForward =
     !!activeTab &&
     activeTab.type === "iframe" &&
@@ -976,7 +1748,15 @@ export default function BrowserShell() {
 
   function openYouTubeTab(background = false) {
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setTabs((ts) => [...ts, { id, title: "YouTube", type: "youtube", ...(ghostMode ? { ghost: true } : {}) }]);
+    setTabs((ts) => [
+      ...ts,
+      {
+        id,
+        title: "YouTube",
+        type: "youtube",
+        ...(ghostMode ? { ghost: true } : {}),
+      },
+    ]);
     if (!background) setActiveId(id);
   }
 
@@ -987,7 +1767,10 @@ export default function BrowserShell() {
       setActiveId(existing.id);
       return;
     }
-    setTabs((ts) => [...ts, { id: "inteligencias", title: "🧠 Inteligências", type: "inteligencias" }]);
+    setTabs((ts) => [
+      ...ts,
+      { id: "inteligencias", title: "🧠 Inteligências", type: "inteligencias" },
+    ]);
     setActiveId("inteligencias");
   }
 
@@ -997,7 +1780,10 @@ export default function BrowserShell() {
       setActiveId(ARENA_TAB_ID);
       return;
     }
-    setTabs((ts) => [...ts, { id: ARENA_TAB_ID, title: "⚖️ Arena de IAs", type: "arena" }]);
+    setTabs((ts) => [
+      ...ts,
+      { id: ARENA_TAB_ID, title: "⚖️ Arena de IAs", type: "arena" },
+    ]);
     setActiveId(ARENA_TAB_ID);
   }
 
@@ -1007,7 +1793,10 @@ export default function BrowserShell() {
       setActiveId(PRIVACY_TAB_ID);
       return;
     }
-    setTabs((ts) => [...ts, { id: PRIVACY_TAB_ID, title: "📊 Privacidade", type: "privacidade" }]);
+    setTabs((ts) => [
+      ...ts,
+      { id: PRIVACY_TAB_ID, title: "📊 Privacidade", type: "privacidade" },
+    ]);
     setActiveId(PRIVACY_TAB_ID);
   }
 
@@ -1029,7 +1818,9 @@ export default function BrowserShell() {
       window.open(url, "_blank", "noopener,noreferrer");
       setToast(message ?? `${domainOf(url)} aberta em nova aba`);
     } catch {
-      setToast("Não foi possível abrir a nova aba — verifique o bloqueador de pop-ups.");
+      setToast(
+        "Não foi possível abrir a nova aba — verifique o bloqueador de pop-ups.",
+      );
     }
   }
 
@@ -1037,7 +1828,11 @@ export default function BrowserShell() {
   function rememberUrl(url: string, title: string) {
     if (!url || url.startsWith("orbit-yt-search:")) return;
     try {
-      const entry: UrlHistoryItem = { title: title || domainOf(url), url, at: Date.now() };
+      const entry: UrlHistoryItem = {
+        title: title || domainOf(url),
+        url,
+        at: Date.now(),
+      };
       const rest = readUrlHistory().filter((h) => h.url !== url);
       const next = [entry, ...rest].slice(0, URL_HISTORY_MAX);
       writeUrlHistory(next);
@@ -1048,15 +1843,11 @@ export default function BrowserShell() {
   function openIframeTab(url: string, title: string, background = false) {
     // 🛡️ Tarefa 7: tracker → toast + contador, sem abrir a aba
     if (blockTracker(url)) return;
-    // TAREFA 1 — sites que bloqueiam iframe (google, instagram, ML…) abrem
-    // DIRETO em nova aba do sistema: nunca cadeado para sites comuns
-    if (isBlockedFrame(url)) {
-      openExternal(url, `🌐 ${title || domainOf(url)} aberto em nova aba — sua conta, nossa janela`);
-      return;
-    }
+    // Sites bloqueados entram na aba e exibem a tela Órbita Externa.
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     // TAREFA 1/25 — whitelist e zona de confiança PULAM o check de golpe
-    const scam = isWhitelisted(url) || isTrustedHost(url) ? null : suspiciousBrand(url);
+    const scam =
+      isWhitelisted(url) || isTrustedHost(url) ? null : suspiciousBrand(url);
     if (scam) {
       const embedUrl = toEmbeddableUrl(url);
       setTabs((ts) => [
@@ -1072,7 +1863,8 @@ export default function BrowserShell() {
           ...(ghostMode ? { ghost: true } : {}),
         },
       ]);
-      if (!ghostMode) setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
+      if (!ghostMode)
+        setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
       if (!background) setActiveId(id);
       rememberUrl(embedUrl, title);
       return;
@@ -1083,7 +1875,13 @@ export default function BrowserShell() {
       const ytId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       setTabs((ts) => [
         ...ts,
-        { id: ytId, title, type: "youtube-search", url: ytTerm, ...(ghostMode ? { ghost: true } : {}) },
+        {
+          id: ytId,
+          title,
+          type: "youtube-search",
+          url: ytTerm,
+          ...(ghostMode ? { ghost: true } : {}),
+        },
       ]);
       if (!background) setActiveId(ytId);
       return;
@@ -1094,15 +1892,33 @@ export default function BrowserShell() {
     }
     const embedUrl = toEmbeddableUrl(url);
     // MODO FANTASMA: aba marcada como fantasma e histórico NÃO gravado
-    setTabs((ts) => [...ts, { id, title, type: "iframe", url: embedUrl, ...(ghostMode ? { ghost: true } : {}) }]);
-    if (!ghostMode) setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
+    setTabs((ts) => [
+      ...ts,
+      {
+        id,
+        title,
+        type: "iframe",
+        url: embedUrl,
+        ...(ghostMode ? { ghost: true } : {}),
+      },
+    ]);
+    if (!ghostMode)
+      setHistories((h) => ({ ...h, [id]: { stack: [embedUrl], index: 0 } }));
     if (!background) setActiveId(id);
     rememberUrl(embedUrl, title);
   }
 
   function newTab() {
     const id = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setTabs((ts) => [...ts, { id, title: "Nova aba", type: "home", ...(ghostMode ? { ghost: true } : {}) }]);
+    setTabs((ts) => [
+      ...ts,
+      {
+        id,
+        title: "Nova aba",
+        type: "home",
+        ...(ghostMode ? { ghost: true } : {}),
+      },
+    ]);
     setActiveId(id);
   }
 
@@ -1153,7 +1969,11 @@ export default function BrowserShell() {
       if (ts.some((t) => t.id === HOME_TAB_ID)) return ts;
       const orbitIdx = ts.findIndex((t) => t.id === ORBIT_TAB_ID);
       const next = [...ts];
-      next.splice(orbitIdx + 1, 0, { id: HOME_TAB_ID, title: "Início", type: "home" });
+      next.splice(orbitIdx + 1, 0, {
+        id: HOME_TAB_ID,
+        title: "Início",
+        type: "home",
+      });
       return next;
     });
     setActiveId(HOME_TAB_ID);
@@ -1188,11 +2008,17 @@ export default function BrowserShell() {
       return;
     }
     // TAREFA 1/25 — whitelist e zona de confiança nunca alertam
-    const scam = isWhitelisted(url) || isTrustedHost(url) ? null : suspiciousBrand(url);
+    const scam =
+      isWhitelisted(url) || isTrustedHost(url) ? null : suspiciousBrand(url);
     if (scam && activeTab.type === "iframe") {
       // TAREFA 2 — navegação suspeita: entra NA HORA, aviso DENTRO da aba
       navigateInTab(activeTab.id, url, title);
-      updateTab(activeTab.id, { unverified: true, scamBrand: scam.brand, scamOfficial: scam.official, scamDismissed: false });
+      updateTab(activeTab.id, {
+        unverified: true,
+        scamBrand: scam.brand,
+        scamOfficial: scam.official,
+        scamDismissed: false,
+      });
       return;
     }
     if (scam) {
@@ -1212,7 +2038,11 @@ export default function BrowserShell() {
     }
     if (isYouTubeHome(url)) {
       if (activeTab.type === "iframe" || activeTab.type === "youtube") {
-        updateTab(activeTab.id, { type: "youtube", url: undefined, title: "YouTube" });
+        updateTab(activeTab.id, {
+          type: "youtube",
+          url: undefined,
+          title: "YouTube",
+        });
       } else {
         openYouTubeTab();
       }
@@ -1242,7 +2072,7 @@ export default function BrowserShell() {
         resolved.url,
         resolved.title.startsWith("Busca:")
           ? "🌐 Busca do Google aberta em nova aba"
-          : `🌐 ${resolved.title} aberta em nova aba`
+          : `🌐 ${resolved.title} aberta em nova aba`,
       );
       setUrlInput("");
       setSuggestOpen(false);
@@ -1260,7 +2090,11 @@ export default function BrowserShell() {
     if (!rawUrl) return;
     const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
     const title = favName.trim() || domainOf(url);
-    setFavorites((fs) => (fs.some((f) => f.url === url) ? fs : [...fs, { title, url, folder: "Geral" }]));
+    setFavorites((fs) =>
+      fs.some((f) => f.url === url)
+        ? fs
+        : [...fs, { title, url, folder: "Geral" }],
+    );
     setFavName("");
     setFavUrl("");
     setShowFavForm(false);
@@ -1277,15 +2111,26 @@ export default function BrowserShell() {
     if (!activeTab || !activeHistory || activeHistory.index <= 0) return;
     const index = activeHistory.index - 1;
     const url = activeHistory.stack[index];
-    setHistories((h) => ({ ...h, [activeTab.id]: { ...activeHistory, index } }));
+    setHistories((h) => ({
+      ...h,
+      [activeTab.id]: { ...activeHistory, index },
+    }));
     updateTab(activeTab.id, { url });
   }
 
   function goForward() {
-    if (!activeTab || !activeHistory || activeHistory.index >= activeHistory.stack.length - 1) return;
+    if (
+      !activeTab ||
+      !activeHistory ||
+      activeHistory.index >= activeHistory.stack.length - 1
+    )
+      return;
     const index = activeHistory.index + 1;
     const url = activeHistory.stack[index];
-    setHistories((h) => ({ ...h, [activeTab.id]: { ...activeHistory, index } }));
+    setHistories((h) => ({
+      ...h,
+      [activeTab.id]: { ...activeHistory, index },
+    }));
     updateTab(activeTab.id, { url });
   }
 
@@ -1296,15 +2141,23 @@ export default function BrowserShell() {
   // TAREFA 13 — contexto da página ativa (enviado à IA na sidebar)
   const pageContext: { title: string; url: string } | null =
     activeTab && (activeTab.type === "iframe" || activeTab.type === "youtube")
-      ? { title: activeTab.title, url: activeTab.url ?? "https://www.youtube.com" }
+      ? {
+          title: activeTab.title,
+          url: activeTab.url ?? "https://www.youtube.com",
+        }
       : null;
 
   // TAREFA 5 — sugestões do campo de URL (favoritos filtrados + busca no Google)
   const suggestions = useMemo(() => {
     const q = urlInput.trim().toLowerCase();
-    const list = (q
-      ? favorites.filter((f) => f.title.toLowerCase().includes(q) || f.url.toLowerCase().includes(q))
-      : favorites
+    const list = (
+      q
+        ? favorites.filter(
+            (f) =>
+              f.title.toLowerCase().includes(q) ||
+              f.url.toLowerCase().includes(q),
+          )
+        : favorites
     )
       .slice(0, 5)
       .map((f) => ({ label: f.title, sub: f.url, url: f.url, title: f.title }));
@@ -1322,7 +2175,12 @@ export default function BrowserShell() {
   const smartResult = smartBarAnswer(urlInput);
 
   // TAREFA 5 — executa a sugestão escolhida (Enter, setas + Enter, ou clique)
-  function runSuggestion(item: { label: string; sub: string; url: string; title: string }) {
+  function runSuggestion(item: {
+    label: string;
+    sub: string;
+    url: string;
+    title: string;
+  }) {
     setSuggestOpen(false);
     setSuggestIdx(-1);
     setUrlInput("");
@@ -1338,23 +2196,32 @@ export default function BrowserShell() {
     if (activeTab.type === "orbit-chat") {
       return (
         <div className="h-full px-4 py-4">
-          <OrbitChat onToast={setToast} />
+          <OrbitChat onToast={setToast} onOpenHub={openIntelligenceTab} />
         </div>
       );
     }
     if (activeTab.type === "home") {
-      return <HomeGrid onOpen={openIframeTab} onIntelligence={openIntelligenceTab} username={settings.username} history={urlHistory} background={settings.background} />;
+      return (
+        <HomeGrid
+          onOpen={openIframeTab}
+          onIntelligence={openIntelligenceTab}
+          username={settings.username}
+          history={urlHistory}
+          background={settings.background}
+          ghost={activeTab.ghost}
+        />
+      );
     }
     if (activeTab.type === "inteligencias") {
       return <IntelligenceHub onOpenOrbit={() => setActiveId(ORBIT_TAB_ID)} />;
     }
     if (activeTab.type === "youtube") {
-      return (
-        <YouTubeRealHome key={activeTab.id} onToast={setToast} />
-      );
+      return <YouTubeRealHome key={activeTab.id} onToast={setToast} />;
     }
     if (activeTab.type === "youtube-search") {
-      return <YouTubeSearchFallback key={activeTab.id} term={activeTab.url ?? ""} />;
+      return (
+        <YouTubeSearchFallback key={activeTab.id} term={activeTab.url ?? ""} />
+      );
     }
     // TAREFA 17 — Arena Multi-IA
     if (activeTab.type === "arena") {
@@ -1367,11 +2234,13 @@ export default function BrowserShell() {
     // TAREFA 23 — Dashboard de privacidade (100% local, estilo Brave)
     if (activeTab.type === "privacidade") {
       return (
-        <>{/* <PrivacyDashboard blockedCount={blockedCount} tabsCount={tabs.length} historyCount={urlHistory.length} /> */}</>
+        <>
+          {/* <PrivacyDashboard blockedCount={blockedCount} tabsCount={tabs.length} historyCount={urlHistory.length} /> */}
+        </>
       );
     }
     const url = activeTab.url ?? "";
-    if (!url || isBlockedFrame(url)) {
+    if (!url) {
       return <BlockedNotice url={url} />;
     }
     // TAREFA 2 — aviso de golpe DENTRO da aba (nunca modal antes): o site só
@@ -1400,6 +2269,11 @@ export default function BrowserShell() {
         title={activeTab.title}
         reloadKey={reloadKey}
         ghost={activeTab.ghost}
+        knownBlocked={isBlockedFrame(url) && !isCuratedIframeUrl(url)}
+        onOpenOutside={() =>
+          openExternal(url, `🌐 ${activeTab.title} aberto em nova aba`)
+        }
+        onBack={() => setActiveId(HOME_TAB_ID)}
       />
     );
   }
@@ -1408,7 +2282,13 @@ export default function BrowserShell() {
     "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/[0.12] hover:text-white disabled:opacity-30 disabled:hover:bg-transparent";
 
   if (splash) {
-    return <div className="flex h-screen w-full items-center justify-center bg-black"><div className="animate-spin"><Logo size={42} /></div></div>;
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-black">
+        <div className="animate-spin">
+          <Logo size={42} />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1422,21 +2302,70 @@ export default function BrowserShell() {
           className="flex shrink-0 items-center gap-2 rounded-lg px-2 py-1.5 text-white transition hover:bg-white/[0.12]"
         >
           <Logo size={18} />
-          <span className="font-display text-[15px] font-semibold tracking-tight">Orbit</span>
+          <span className="font-display text-[15px] font-semibold tracking-tight">
+            Orbit
+          </span>
         </button>
 
-        <button type="button" onClick={goBack} disabled={!canBack} aria-label="Voltar" title="Voltar" className={iconBtn}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <button
+          type="button"
+          onClick={goBack}
+          disabled={!canBack}
+          aria-label="Voltar"
+          title="Voltar"
+          className={iconBtn}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M19 12H5m0 0l6 6m-6-6l6-6" />
           </svg>
         </button>
-        <button type="button" onClick={goForward} disabled={!canForward} aria-label="Avançar" title="Avançar" className={iconBtn}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <button
+          type="button"
+          onClick={goForward}
+          disabled={!canForward}
+          aria-label="Avançar"
+          title="Avançar"
+          className={iconBtn}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M5 12h14m0 0l-6-6m6 6l-6 6" />
           </svg>
         </button>
-        <button type="button" onClick={reload} aria-label="Recarregar" title="Recarregar" className={iconBtn}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <button
+          type="button"
+          onClick={reload}
+          aria-label="Recarregar"
+          title="Recarregar"
+          className={iconBtn}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
             <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6" />
           </svg>
         </button>
@@ -1449,7 +2378,11 @@ export default function BrowserShell() {
             className="h-9 w-full rounded-full border border-zinc-200 bg-zinc-50 px-4 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-zinc-400 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-white/30"
           />
         </form>
-        {smartResult && <div className="absolute left-1/2 top-[54px] z-50 -translate-x-1/2 rounded-xl border border-zinc-300 bg-white px-4 py-2 text-xs font-medium text-zinc-700 shadow-xl dark:border-white/20 dark:bg-zinc-900 dark:text-zinc-100">{smartResult} · Enter para usar</div>}
+        {smartResult && (
+          <div className="absolute left-1/2 top-[54px] z-50 -translate-x-1/2 rounded-xl border border-zinc-300 bg-white px-4 py-2 text-xs font-medium text-zinc-700 shadow-xl dark:border-white/20 dark:bg-zinc-900 dark:text-zinc-100">
+            {smartResult} · Enter para usar
+          </div>
+        )}
 
         {ghostMode && (
           <span className="hidden shrink-0 items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 sm:flex">
@@ -1469,27 +2402,239 @@ export default function BrowserShell() {
           aria-label="Modo Fantasma"
           title="Modo Fantasma — nada fica salvo"
           className={`${iconBtn} ${
-            ghostMode
-              ? "bg-white/15 text-white hover:bg-white/25"
-              : ""
+            ghostMode ? "bg-white/15 text-white hover:bg-white/25" : ""
           }`}
         >
           👻
         </button>
         <ThemeToggle />
-        <button type="button" onClick={() => setSettingsOpen(true)} aria-label="Configurações" title="Configurações" className={iconBtn}>☰</button>
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          aria-label="Configurações"
+          title="Configurações"
+          className={iconBtn}
+        >
+          ☰
+        </button>
       </div>
 
       {settingsOpen && (
         <aside className="absolute inset-y-0 left-0 z-[80] w-80 overflow-y-auto rounded-r-2xl border-r border-zinc-200 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-[#0E0E11]">
-          <div className="mb-5 flex items-center justify-between"><h2 className="font-semibold">☰ Configurações</h2><button type="button" onClick={() => setSettingsOpen(false)} className={iconBtn}>×</button></div>
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="font-semibold">☰ Configurações</h2>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(false)}
+              className={iconBtn}
+            >
+              ×
+            </button>
+          </div>
           <div className="space-y-5 text-sm">
-            <label className="block">Seu nome<input value={settings.username} onChange={(e) => setSettings((s) => ({ ...s, username: e.target.value }))} placeholder="Como quer ser chamado?" className="mt-1 w-full rounded border bg-transparent px-2 py-1" /></label><label className="block">Fundo <select value={settings.background} onChange={(e) => setSettings((s) => ({ ...s, background: e.target.value as "cosmos" | "simple" }))} className="ml-2 rounded border bg-transparent p-1"><option value="cosmos">Cosmos animado</option><option value="simple">Simples</option></select></label>
-            <section><h3 className="mb-2 font-semibold">Geral</h3><div className="flex gap-2"><button onClick={() => setTheme("light")} className="rounded border px-2 py-1">Claro</button><button onClick={() => setTheme("dark")} className="rounded border px-2 py-1">Escuro</button><button onClick={() => setTheme("system")} className="rounded border px-2 py-1">Sistema</button></div><label className="mt-2 block">Página inicial <select value={settings.homepage} onChange={(e) => setSettings((s) => ({ ...s, homepage: e.target.value }))} className="ml-2 rounded border bg-transparent p-1"><option value="home">Início</option><option value="orbit">Orbit</option></select></label><label className="mt-2 block">Idioma <select value={settings.locale} onChange={(e) => setSettings((s) => ({ ...s, locale: e.target.value }))} className="ml-2 rounded border bg-transparent p-1"><option value="pt-BR">pt-BR</option><option value="en" disabled>EN (em breve)</option></select></label></section>
-            <section><h3 className="mb-2 font-semibold">Favoritos</h3><button onClick={() => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(favorites, null, 2)], { type: "application/json" })); a.download = "orbit-favoritos.json"; a.click(); }} className="rounded border px-2 py-1">Exportar JSON</button><label className="ml-2 cursor-pointer rounded border px-2 py-1">Importar JSON<input type="file" accept="application/json" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (!file) return; file.text().then((raw) => { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) setFavorites(parsed.filter((f): f is Favorite => typeof f?.title === "string" && typeof f?.url === "string")); }).catch(() => setToast("Arquivo de favoritos inválido")); }} /></label></section>
-            <section><h3 className="mb-2 font-semibold">Privacidade</h3><button onClick={toggleGhost} className="rounded border px-2 py-1">{ghostMode ? "Desativar" : "Ativar"} Fantasma</button><p className="mt-2 text-zinc-500">{blockedCount} rastreadores bloqueados</p><button onClick={() => { if (window.confirm("Limpar dados do Orbit? Esta ação não pode ser desfeita.")) { if (window.confirm("Confirmar limpeza de histórico, abas e favoritos?")) { ["orbit_history", "orbit_chat_history", "orbit_tabs"].forEach((k) => localStorage.removeItem(k)); setUrlHistory([]); setTabs([{ id: ORBIT_TAB_ID, title: "Orbit", type: "orbit-chat" }]); } } }} className="mt-2 rounded border border-red-400 px-2 py-1 text-red-600">Limpar dados</button></section>
-            <section><h3 className="mb-2 font-semibold">IA</h3><label><input type="checkbox" checked={settings.premium} onChange={(e) => setSettings((s) => ({ ...s, premium: e.target.checked }))} /> 💎 Imagem premium</label><p className="mt-2 text-zinc-500">Gemini ✓ · OpenRouter ⚪</p></section>
-            <section><h3 className="mb-2 font-semibold">Sobre</h3><p>Orbit 0.1.0 · feito no Brasil 🇧🇷</p><a className="text-zinc-900 underline dark:text-white" href="https://github.com" target="_blank" rel="noreferrer">GitHub</a></section>
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsOpen(false);
+                openIntelligenceTab();
+              }}
+              className="flex w-full items-center justify-between rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-left font-semibold text-violet-700 dark:text-violet-300"
+            >
+              <span>🧠 Inteligências</span>
+              <span>→</span>
+            </button>
+            <label className="block">
+              Seu nome
+              <input
+                value={settings.username}
+                onChange={(e) =>
+                  setSettings((s) => ({ ...s, username: e.target.value }))
+                }
+                placeholder="Como quer ser chamado?"
+                className="mt-1 w-full rounded border bg-transparent px-2 py-1"
+              />
+            </label>
+            <label className="block">
+              Fundo{" "}
+              <select
+                value={settings.background}
+                onChange={(e) =>
+                  setSettings((s) => ({
+                    ...s,
+                    background: e.target.value as "cosmos" | "simple",
+                  }))
+                }
+                className="ml-2 rounded border bg-transparent p-1"
+              >
+                <option value="cosmos">Cosmos animado</option>
+                <option value="simple">Simples</option>
+              </select>
+            </label>
+            <section>
+              <h3 className="mb-2 font-semibold">Geral</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setTheme("light")}
+                  className="rounded border px-2 py-1"
+                >
+                  Claro
+                </button>
+                <button
+                  onClick={() => setTheme("dark")}
+                  className="rounded border px-2 py-1"
+                >
+                  Escuro
+                </button>
+                <button
+                  onClick={() => setTheme("system")}
+                  className="rounded border px-2 py-1"
+                >
+                  Sistema
+                </button>
+              </div>
+              <label className="mt-2 block">
+                Página inicial{" "}
+                <select
+                  value={settings.homepage}
+                  onChange={(e) =>
+                    setSettings((s) => ({ ...s, homepage: e.target.value }))
+                  }
+                  className="ml-2 rounded border bg-transparent p-1"
+                >
+                  <option value="home">Início</option>
+                  <option value="orbit">Orbit</option>
+                </select>
+              </label>
+              <label className="mt-2 block">
+                Idioma{" "}
+                <select
+                  value={settings.locale}
+                  onChange={(e) =>
+                    setSettings((s) => ({ ...s, locale: e.target.value }))
+                  }
+                  className="ml-2 rounded border bg-transparent p-1"
+                >
+                  <option value="pt-BR">pt-BR</option>
+                  <option value="en" disabled>
+                    EN (em breve)
+                  </option>
+                </select>
+              </label>
+            </section>
+            <section>
+              <h3 className="mb-2 font-semibold">Favoritos</h3>
+              <button
+                onClick={() => {
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(
+                    new Blob([JSON.stringify(favorites, null, 2)], {
+                      type: "application/json",
+                    }),
+                  );
+                  a.download = "orbit-favoritos.json";
+                  a.click();
+                }}
+                className="rounded border px-2 py-1"
+              >
+                Exportar JSON
+              </button>
+              <label className="ml-2 cursor-pointer rounded border px-2 py-1">
+                Importar JSON
+                <input
+                  type="file"
+                  accept="application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    file
+                      .text()
+                      .then((raw) => {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed))
+                          setFavorites(
+                            parsed.filter(
+                              (f): f is Favorite =>
+                                typeof f?.title === "string" &&
+                                typeof f?.url === "string",
+                            ),
+                          );
+                      })
+                      .catch(() => setToast("Arquivo de favoritos inválido"));
+                  }}
+                />
+              </label>
+            </section>
+            <section>
+              <h3 className="mb-2 font-semibold">Privacidade</h3>
+              <button
+                onClick={toggleGhost}
+                className="rounded border px-2 py-1"
+              >
+                {ghostMode ? "Desativar" : "Ativar"} Fantasma
+              </button>
+              <p className="mt-2 text-zinc-500">
+                {blockedCount} rastreadores bloqueados
+              </p>
+              <button
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "Limpar dados do Orbit? Esta ação não pode ser desfeita.",
+                    )
+                  ) {
+                    if (
+                      window.confirm(
+                        "Confirmar limpeza de histórico, abas e favoritos?",
+                      )
+                    ) {
+                      [
+                        "orbit_history",
+                        "orbit_chat_history",
+                        "orbit_tabs",
+                      ].forEach((k) => localStorage.removeItem(k));
+                      setUrlHistory([]);
+                      setTabs([
+                        {
+                          id: ORBIT_TAB_ID,
+                          title: "Orbit",
+                          type: "orbit-chat",
+                        },
+                      ]);
+                    }
+                  }
+                }}
+                className="mt-2 rounded border border-red-400 px-2 py-1 text-red-600"
+              >
+                Limpar dados
+              </button>
+            </section>
+            <section>
+              <h3 className="mb-2 font-semibold">IA</h3>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={settings.premium}
+                  onChange={(e) =>
+                    setSettings((s) => ({ ...s, premium: e.target.checked }))
+                  }
+                />{" "}
+                💎 Imagem premium
+              </label>
+              <p className="mt-2 text-zinc-500">Gemini ✓ · OpenRouter ⚪</p>
+            </section>
+            <section>
+              <h3 className="mb-2 font-semibold">Sobre</h3>
+              <p>Orbit 0.1.0 · feito no Brasil 🇧🇷</p>
+              <a
+                className="text-zinc-900 underline dark:text-white"
+                href="https://github.com"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub
+              </a>
+            </section>
           </div>
         </aside>
       )}
@@ -1497,7 +2642,10 @@ export default function BrowserShell() {
       {/* Barra de favoritos (MELHORIA 1: gerenciáveis) */}
       <div className="scroll-slim flex items-center gap-4 overflow-x-auto border-b border-zinc-200 px-3 py-1.5 dark:border-white/[0.06]">
         {favorites.map((f) => (
-          <div key={f.url} className="group relative flex shrink-0 items-center">
+          <div
+            key={f.url}
+            className="group relative flex shrink-0 items-center"
+          >
             <button
               type="button"
               onClick={() => openIframeTab(f.url, f.title)}
@@ -1505,7 +2653,11 @@ export default function BrowserShell() {
               className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px] text-zinc-600 transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={faviconFor(f.url)} alt="" className="h-4 w-4 rounded-sm" />
+              <img
+                src={faviconFor(f.url)}
+                alt=""
+                className="h-4 w-4 rounded-sm"
+              />
               <span>{f.title}</span>
             </button>
             <button
@@ -1578,7 +2730,11 @@ export default function BrowserShell() {
                   : "border-transparent text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/[0.04]"
               }`}
             >
-              <button type="button" onClick={() => setActiveId(t.id)} className="max-w-[160px] truncate">
+              <button
+                type="button"
+                onClick={() => setActiveId(t.id)}
+                className="max-w-[160px] truncate"
+              >
                 {t.title}
               </button>
               {t.id !== ORBIT_TAB_ID && (

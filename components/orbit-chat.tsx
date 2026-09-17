@@ -241,8 +241,10 @@ function composeOnBackground(
 
 export default function OrbitChat({
   onToast,
+  onOpenHub,
 }: {
   onToast?: (message: string) => void;
+  onOpenHub?: () => void;
 }) {
   const [messages, setMessages] = useState<Msg[]>([WELCOME]);
   // Só persiste depois de carregar o histórico salvo (evita sobrescrever com o estado inicial)
@@ -265,6 +267,7 @@ export default function OrbitChat({
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   // 💎 BYOK — qualidade de imagem premium (preferência em localStorage "orbit_premium_image")
   const [premiumImage, setPremiumImage] = useState(false);
+  const [enhancedImage, setEnhancedImage] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [model, setModel] = useState("");
   const skipHistorySaveRef = useRef(false);
@@ -300,12 +303,19 @@ export default function OrbitChat({
       const data = await response.json();
       if (response.ok) return data;
       const status = response.status || "erro";
-      const detail = typeof data?.error === "string" ? data.error : "sem detalhe retornado";
-      console.error(`[ORBIT] OpenRouter falhou para ${model} (HTTP ${status}): ${detail}`);
-      onToast?.(`⚠️ Modelo ${model} indisponível no momento (erro ${status}) — respondendo com Gemini como alternativa`);
+      const detail =
+        typeof data?.error === "string" ? data.error : "sem detalhe retornado";
+      console.error(
+        `[ORBIT] OpenRouter falhou para ${model} (HTTP ${status}): ${detail}`,
+      );
+      onToast?.(
+        `⚠️ Modelo ${model} indisponível no momento (erro ${status}) — respondendo com Gemini como alternativa`,
+      );
     } catch (error) {
       console.error(`[ORBIT] OpenRouter falhou para ${model}:`, error);
-      onToast?.(`⚠️ Modelo ${model} indisponível no momento (erro de rede) — respondendo com Gemini como alternativa`);
+      onToast?.(
+        `⚠️ Modelo ${model} indisponível no momento (erro de rede) — respondendo com Gemini como alternativa`,
+      );
     }
     const fallback = await fetch("/api/chat", {
       method: "POST",
@@ -315,9 +325,40 @@ export default function OrbitChat({
     return fallback.json();
   }
 
-  async function streamChat(message: string, history: unknown): Promise<{ ok: boolean; text: string; warning?: string }> {
-    const payload = { message, history, stream: true, ...(model ? { model } : {}) };
-    const endpoint = model ? "/api/chat/openrouter" : "/api/chat";
+  async function streamChat(
+    message: string,
+    history: unknown,
+    forceGemini = false,
+  ): Promise<{ ok: boolean; text: string; warning?: string; fallback?: boolean; fallbackModel?: string }> {
+    const useOpenRouter = Boolean(model) && !forceGemini;
+    const requestedModel = model;
+    async function tryOpenRouterFallback(): Promise<{ ok: boolean; text: string; fallbackModel?: string }> {
+      try {
+        const response = await fetch("/api/chat/openrouter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message, history, model: requestedModel }),
+        });
+        const data = (await response.json().catch(() => ({}))) as { reply?: string; model?: string };
+        if (response.ok && typeof data.reply === "string" && data.reply) {
+          setMessages((prev) => {
+            const next = [...prev];
+            const last = next[next.length - 1];
+            if (last && last.role === "orbit") last.text = data.reply!;
+            return next;
+          });
+          return { ok: true, text: data.reply, fallbackModel: data.model !== requestedModel ? requestedModel : undefined };
+        }
+      } catch {}
+      return { ok: false, text: "" };
+    }
+    const payload = {
+      message,
+      history,
+      stream: true,
+      ...(useOpenRouter ? { model } : {}),
+    };
+    const endpoint = useOpenRouter ? "/api/chat/openrouter" : "/api/chat";
 
     try {
       const response = await fetch(endpoint, {
@@ -327,9 +368,16 @@ export default function OrbitChat({
       });
 
       if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => ({}));
-        const detail = typeof data?.error === "string" ? data.error : "Erro ao conectar com a IA.";
-        return { ok: false, text: "", warning: detail };
+        await response.json().catch(() => ({}));
+        if (useOpenRouter) {
+          const alternate = await tryOpenRouterFallback();
+          if (alternate.ok) return { ...alternate, fallback: Boolean(alternate.fallbackModel) };
+          setOrbitModel("");
+          setModel("");
+          const fallback = await streamChat(message, history, true);
+          return fallback.ok ? { ...fallback, fallback: true, fallbackModel: requestedModel } : fallback;
+        }
+        return { ok: false, text: "", warning: "Não consegui conectar ao Gemini agora." };
       }
 
       const reader = response.body.getReader();
@@ -355,7 +403,9 @@ export default function OrbitChat({
               try {
                 const json = JSON.parse(payload) as {
                   choices?: Array<{ delta?: { content?: string | null } }>;
-                  candidates?: Array<{ content?: { parts?: Array<{ text?: string } | null> } }>;
+                  candidates?: Array<{
+                    content?: { parts?: Array<{ text?: string } | null> };
+                  }>;
                 };
 
                 const openrouterText = json.choices?.[0]?.delta?.content;
@@ -373,10 +423,11 @@ export default function OrbitChat({
                   continue;
                 }
 
-                const geminiText = json.candidates
-                  ?.flatMap((candidate) => candidate.content?.parts ?? [])
-                  .map((part) => part?.text ?? "")
-                  .join("") ?? "";
+                const geminiText =
+                  json.candidates
+                    ?.flatMap((candidate) => candidate.content?.parts ?? [])
+                    .map((part) => part?.text ?? "")
+                    .join("") ?? "";
                 if (geminiText) {
                   text += geminiText;
                   sawContent = true;
@@ -410,17 +461,20 @@ export default function OrbitChat({
           try {
             const json = JSON.parse(payload) as {
               choices?: Array<{ delta?: { content?: string | null } }>;
-              candidates?: Array<{ content?: { parts?: Array<{ text?: string } | null> } }>;
+              candidates?: Array<{
+                content?: { parts?: Array<{ text?: string } | null> };
+              }>;
             };
             const openrouterText = json.choices?.[0]?.delta?.content;
             if (typeof openrouterText === "string") {
               text += openrouterText;
               sawContent = true;
             }
-            const geminiText = json.candidates
-              ?.flatMap((candidate) => candidate.content?.parts ?? [])
-              .map((part) => part?.text ?? "")
-              .join("") ?? "";
+            const geminiText =
+              json.candidates
+                ?.flatMap((candidate) => candidate.content?.parts ?? [])
+                .map((part) => part?.text ?? "")
+                .join("") ?? "";
             if (geminiText) {
               text += geminiText;
               sawContent = true;
@@ -443,13 +497,38 @@ export default function OrbitChat({
       }
 
       if (!sawContent) {
-        return { ok: false, text: "", warning: "A resposta chegou vazia. Tente novamente." };
+        if (useOpenRouter) {
+          const alternate = await tryOpenRouterFallback();
+          if (alternate.ok) return { ...alternate, fallback: Boolean(alternate.fallbackModel) };
+          setOrbitModel("");
+          setModel("");
+          const fallback = await streamChat(message, history, true);
+          return fallback.ok ? { ...fallback, fallback: true, fallbackModel: requestedModel } : fallback;
+        }
+        return {
+          ok: false,
+          text: "",
+          warning: "A resposta chegou vazia. Tente novamente.",
+        };
       }
 
       return { ok: true, text };
     } catch (error) {
       console.error("[ORBIT] Stream falhou:", error);
-      return { ok: false, text: "", warning: "A resposta foi interrompida antes de terminar. Tente novamente." };
+      if (useOpenRouter) {
+        const alternate = await tryOpenRouterFallback();
+        if (alternate.ok) return { ...alternate, fallback: Boolean(alternate.fallbackModel) };
+        setOrbitModel("");
+        setModel("");
+        const fallback = await streamChat(message, history, true);
+        return fallback.ok ? { ...fallback, fallback: true, fallbackModel: requestedModel } : fallback;
+      }
+      return {
+        ok: false,
+        text: "",
+        warning:
+          "A resposta foi interrompida antes de terminar. Tente novamente.",
+      };
     }
   }
 
@@ -457,6 +536,7 @@ export default function OrbitChat({
   useEffect(() => {
     try {
       setPremiumImage(localStorage.getItem("orbit_premium_image") === "true");
+      setEnhancedImage(localStorage.getItem("orbit_img_quality") !== "false");
     } catch {}
   }, []);
 
@@ -465,6 +545,16 @@ export default function OrbitChat({
       const next = !prev;
       try {
         localStorage.setItem("orbit_premium_image", String(next));
+      } catch {}
+      return next;
+    });
+  }
+
+  function toggleImageQuality() {
+    setEnhancedImage((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("orbit_img_quality", String(next));
       } catch {}
       return next;
     });
@@ -487,7 +577,8 @@ export default function OrbitChat({
           typeof m.text === "string" &&
           m.text.includes("Anexe a foto de um produto para gerar"),
       );
-      if (!hasOldWelcome && history.length > 0) setMessages(history.slice(-HISTORY_MAX));
+      if (!hasOldWelcome && history.length > 0)
+        setMessages(history.slice(-HISTORY_MAX));
       setHistoryReady(true);
     });
     return () => {
@@ -506,8 +597,9 @@ export default function OrbitChat({
   }, [messages, historyReady]);
 
   // Tarefa 3.2 — limpa o histórico com confirmação
-  function clearHistory() {
-    if (!window.confirm("Limpar todo o histórico da conversa?")) return;
+  function clearHistory(skipConfirm = false) {
+    if (!skipConfirm && !window.confirm("Limpar todo o histórico da conversa?"))
+      return;
     skipHistorySaveRef.current = true;
     setMessages([WELCOME]);
     void clearStoredHistory();
@@ -630,7 +722,7 @@ export default function OrbitChat({
 
   async function send(e?: React.FormEvent) {
     e?.preventDefault();
-    const text = input.trim();
+    let text = input.trim();
     if ((!text && !image) || loading) return;
 
     // 💎 /config → abre as configurações do chat (inclui "Qualidade de imagem")
@@ -648,6 +740,121 @@ export default function OrbitChat({
       return;
     }
 
+    const commandMatch = text.match(/^(\/\S+)(?:\s+([\s\S]*))?$/);
+    const command = commandMatch?.[1].toLowerCase();
+    const commandArgument = commandMatch?.[2]?.trim() ?? "";
+
+    if (command === "/ajuda") {
+      setMessages((m) => [
+        ...m,
+        { role: "user", text },
+        {
+          role: "orbit",
+          text: "🧭 Comandos do Orbit:\n\n/ajuda — mostra esta ajuda\n/ia — verifica as IAs conectadas\n/limpar — limpa a conversa sem confirmação\n/pdf [tema] — gera um documento PDF sobre o tema\n/anuncio [produto] — ativa o Modo Vendedor\n/config — abre as configurações\n\nPrefixos da barra:\nyt: busca no YouTube\nw: busca na Wikipédia\nm: busca no Mercado Livre\ns: busca na Shopee\ng: busca no Google",
+        },
+      ]);
+      setInput("");
+      return;
+    }
+
+    if (command === "/ia") {
+      setMessages((m) => [...m, { role: "user", text }]);
+      setInput("");
+      setLoading(true);
+      try {
+        const [openRouterResponse, imageProvidersResponse] = await Promise.all([
+          fetch("/api/status/openrouter"),
+          fetch("/api/image/providers"),
+        ]);
+        const openRouterData = (await openRouterResponse.json()) as {
+          connected?: boolean;
+        };
+        const imageProvidersData = (await imageProvidersResponse.json()) as {
+          providers?: { id?: string; configured?: boolean }[];
+        };
+        const openAi = imageProvidersData.providers?.find(
+          (provider) => provider.id === "openai",
+        );
+        setMessages((m) => [
+          ...m,
+          {
+            role: "orbit",
+            text: `🤖 IAs conectadas:\n\nGemini ✅\nOpenRouter ${openRouterData.connected ? "✅ conectado" : "⚪ não configurado"}\nPollinations ✅\nGPT-Image ${openAi?.configured ? "✅" : "⚪ não configurado"}\n\n🧠 Dica: abra o Hub de Inteligências para explorar os modelos disponíveis.`,
+          },
+        ]);
+      } catch {
+        setMessages((m) => [
+          ...m,
+          {
+            role: "orbit",
+            text: "🤖 Gemini ✅ · Pollinations ✅ · Não foi possível consultar os status opcionais agora.\n\n🧠 Abra o Hub de Inteligências para explorar os modelos disponíveis.",
+          },
+        ]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (command === "/limpar") {
+      clearHistory(true);
+      skipHistorySaveRef.current = false;
+      setMessages([
+        WELCOME,
+        { role: "orbit", text: "🧹 Conversa limpa localmente." },
+      ]);
+      setInput("");
+      return;
+    }
+
+    if (command === "/pdf") {
+      if (!commandArgument) {
+        setMessages((m) => [
+          ...m,
+          { role: "user", text },
+          { role: "orbit", text: "📄 Qual tema devo transformar em PDF?" },
+        ]);
+        setInput("");
+        return;
+      }
+      text = `Crie um documento em PDF sobre ${commandArgument}`;
+    }
+
+    if (command === "/anuncio") {
+      if (!commandArgument) {
+        setMessages((m) => [
+          ...m,
+          { role: "user", text },
+          { role: "orbit", text: "📣 Qual produto você quer anunciar?" },
+        ]);
+        setInput("");
+        return;
+      }
+      setMessages((m) => [
+        ...m,
+        { role: "user", text },
+        { role: "orbit", text: "📣 Modo Vendedor ativado" },
+      ]);
+      text = `anuncie o produto: ${commandArgument}`;
+    }
+
+    if (
+      command?.startsWith("/") &&
+      command !== "/pdf" &&
+      command !== "/anuncio"
+    ) {
+      setMessages((m) => [
+        ...m,
+        { role: "user", text },
+        {
+          role: "orbit",
+          text: `🤔 Comando "${command}" não reconhecido. Digite /ajuda`,
+        },
+      ]);
+      setInput("");
+      return;
+    }
+
     const docTrigger =
       /(curr[ií]culo|declarac[aã]o|relat[óo]rio|contrato|recibo|certid[ãa]o|or[çc]amento|cronograma|atestado|carta|of[ií]cio|procura[cç][aã]o)/i;
     const wantsFile =
@@ -658,7 +865,7 @@ export default function OrbitChat({
     const wantsHtml = /\bhtml\b/i.test(text);
     const wantsTxt = /\b(txt|texto simples)\b/i.test(text);
     const wantsPdf = /\bpdf\b/i.test(text);
-    if (docTrigger.test(text) && wantsFile.test(text)) {
+    if ((docTrigger.test(text) || command === "/pdf") && wantsFile.test(text)) {
       setMessages((m) => [
         ...m,
         { role: "user", text },
@@ -769,6 +976,7 @@ export default function OrbitChat({
                 prompt: theme,
                 premium: family === "openai" || premiumImage,
                 forcePollinations: family === "textonly",
+                enhanced: enhancedImage,
               };
         const res = await fetch(endpoint, {
           method: "POST",
@@ -887,7 +1095,10 @@ export default function OrbitChat({
           } catch {
             setMessages((m) => [
               ...m,
-              { role: "orbit", text: "Não foi possível continuar com o produto selecionado." },
+              {
+                role: "orbit",
+                text: "Não foi possível continuar com o produto selecionado.",
+              },
             ]);
           } finally {
             setLoading(false);
@@ -1176,7 +1387,17 @@ export default function OrbitChat({
           const next = [...m];
           const last = next[next.length - 1];
           if (last && last.role === "orbit") {
-            last.text = result.warning ?? "Falha de conexão. Tente novamente.";
+            last.text = result.warning ?? "Não consegui responder agora.";
+            last.retry = true;
+          }
+          return next;
+        });
+      } else if (result.fallback) {
+        setMessages((m) => {
+          const next = [...m];
+          const last = next[next.length - 1];
+          if (last && last.role === "orbit") {
+            last.text += `\n\n(respondido via Gemini — modelo ${result.fallbackModel ?? "selecionado"} indisponível)`;
           }
           return next;
         });
@@ -1186,7 +1407,8 @@ export default function OrbitChat({
         const next = [...m];
         const last = next[next.length - 1];
         if (last && last.role === "orbit") {
-          last.text = "Falha de conexão. Tente novamente.";
+          last.text = "Não consegui responder agora.";
+          last.retry = true;
         }
         return next;
       });
@@ -1227,6 +1449,16 @@ export default function OrbitChat({
           )}
         </div>
         <div className="flex items-center gap-3">
+          {onOpenHub && (
+            <button
+              type="button"
+              onClick={onOpenHub}
+              className="rounded-full border border-violet-500/25 bg-violet-500/10 px-2.5 py-1 text-[11px] font-semibold text-violet-600 dark:text-violet-300"
+              title="Abrir Hub de Inteligências"
+            >
+              🧠 Inteligências
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowSettings((s) => !s)}
@@ -1252,7 +1484,7 @@ export default function OrbitChat({
           </button>
           <button
             type="button"
-            onClick={clearHistory}
+            onClick={() => clearHistory()}
             aria-label="Limpar histórico"
             title="Limpar histórico do chat"
             className="flex h-7 w-7 items-center justify-center rounded-lg text-sm text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/[0.06] dark:hover:text-white"
@@ -1303,6 +1535,15 @@ export default function OrbitChat({
               />
             </button>
           </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-medium text-zinc-700 dark:text-zinc-200">🎨 Qualidade cinematográfica</p>
+              <p className="text-[11.5px] text-zinc-400 dark:text-zinc-500">Prompt aprimorado localmente, sem custo de IA.</p>
+            </div>
+            <button type="button" role="switch" aria-checked={enhancedImage} onClick={toggleImageQuality} className={`relative h-6 w-11 shrink-0 rounded-full transition ${enhancedImage ? "bg-violet-600" : "bg-zinc-300 dark:bg-white/15"}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${enhancedImage ? "left-[22px]" : "left-0.5"}`} />
+            </button>
+          </div>
         </div>
       )}
 
@@ -1342,6 +1583,20 @@ export default function OrbitChat({
                     <div className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-zinc-700 dark:text-zinc-300">
                       {m.text}
                     </div>
+                  )}
+                  {m.retry && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const previous = messages[i - 1];
+                        if (previous?.role !== "user") return;
+                        setInput(previous.text);
+                        window.setTimeout(() => inputRef.current?.form?.requestSubmit(), 0);
+                      }}
+                      className="mt-2 rounded-lg border border-zinc-300 px-2.5 py-1 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-100 dark:border-white/15 dark:text-zinc-300 dark:hover:bg-white/[0.06]"
+                    >
+                      Tentar de novo
+                    </button>
                   )}
                   {m.document && (
                     <div className="mt-3 flex flex-wrap gap-2">

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { enhanceImagePrompt } from "@/lib/prompt-enhancer";
 
 export const maxDuration = 60;
 
@@ -13,7 +14,7 @@ const NEGATIVE =
 
 export async function POST(req: Request) {
   try {
-    const { prompt, premium, forcePollinations } = await req.json();
+    const { prompt, premium, forcePollinations, enhanced = true } = await req.json();
 
     if (!prompt || typeof prompt !== "string" || prompt.trim().length === 0) {
       return NextResponse.json(
@@ -28,7 +29,8 @@ export async function POST(req: Request) {
       );
     }
 
-    const fullPrompt = `${prompt.trim()}, high quality, detailed. ${NEGATIVE}`;
+    const visualPrompt = enhanced === false ? prompt.trim() : enhanceImagePrompt(prompt);
+    const fullPrompt = `${visualPrompt}, high quality, detailed. ${NEGATIVE}`;
 
     // ─────────────────────────────────────────────────────────
     // BYOK — Bring Your Own Key. Configure no .env.local (OPCIONAL):

@@ -102,16 +102,16 @@ export async function chatWithFallback(
 /** Mensagens de erro amigáveis em pt-BR (igual ao padrão da rota existente). */
 export function friendlyError(status: number, apiMessage: string, model: string): string {
   if (status === 402) {
-    return `💳 O modelo ${model} está sem crédito na conta OpenRouter (402 — Payment Required). Adicione créditos em openrouter.ai/credits ou escolha outro modelo. O chat continua funcionando normalmente.`;
+    return `💳 O modelo ${model} está sem crédito disponível. Escolha outro modelo gratuito; o chat continua funcionando normalmente.`;
   }
   if (status === 429) {
-    return `⏳ Limite de uso atingido no modelo ${model} (429). Aguarde alguns segundos ou escolha outro modelo no Hub 🧠.`;
+    return `⏳ Limite de uso atingido no modelo ${model}. Aguarde alguns segundos ou escolha outro modelo no Hub 🧠.`;
   }
   if (status === 401) {
-    return `🔑 Chave OpenRouter inválida ou expirada (401). Verifique OPENROUTER_API_KEY no servidor.`;
+    return `🔑 A conexão com o modelo ${model} não foi autorizada. O Orbit tentará uma alternativa.`;
   }
   if (status === 404) {
-    return `🔎 O modelo ${model} não foi encontrado. Escolha outro no Hub 🧠.`;
+    return `🔎 O modelo ${model} não está disponível no catálogo atual. Escolha outro no Hub 🧠.`;
   }
   return `A IA (${model}) está indisponível agora. Tente novamente em instantes. ${apiMessage.slice(0, 120)}`;
 }

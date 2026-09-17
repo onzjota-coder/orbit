@@ -45,15 +45,6 @@ const CATALOG_TTL = 10 * 60 * 1000;
 const CATALOG_MAX = 150;
 let catalogCache: { at: number; models: HubModel[] } | null = null;
 
-// Fallback offline — usado apenas se o catálogo público estiver inacessível.
-const FALLBACK_CATALOG: HubModel[] = [
-  { id: "openrouter/auto", name: "Auto — OpenRouter escolhe", family: "openrouter", context: null, free: false },
-  { id: "openai/gpt-5", name: "GPT-5 (OpenAI)", family: "openai", context: null, free: false },
-  { id: "anthropic/claude-opus-5", name: "Claude Opus 5", family: "anthropic", context: null, free: false },
-  { id: "~deepseek/deepseek-pro-latest", name: "DeepSeek Pro Latest", family: "deepseek", context: null, free: false },
-  { id: "~z-ai/glm-flash-latest", name: "GLM Flash Latest (Z.ai)", family: "z-ai", context: null, free: false },
-];
-
 // Alguns IDs oficiais do catálogo usam "~"; a família é o vendor sem o prefixo.
 function modelFamily(id: string): string {
   return id.replace(/^~/, "").split("/")[0].toLowerCase();
@@ -111,8 +102,8 @@ export async function GET() {
   try {
     models = await fetchCatalog();
   } catch (e) {
-    console.error("[ORBIT-OR] catálogo falhou → usando fallback:", e);
-    models = FALLBACK_CATALOG;
+    console.error("[ORBIT-OR] catálogo falhou:", e);
+    models = [];
   }
   return NextResponse.json({ available: true, keys, models });
 }
@@ -221,33 +212,34 @@ export async function POST(req: Request) {
       });
     }
 
-    // Rodízio: 401/402/429 em uma chave → tenta a próxima do pool antes de falhar
-    // FALLBACK DE MODELO: se o modelo pedido falhar, tenta 1x o padrão e avisa.
+    // Rodízio: falhas de autenticação, crédito, limite ou servidor tentam outra chave.
     let lastStatus = 0;
     let lastMessage = "";
-    for (let attempt = 0; attempt < keys; attempt++) {
-      const result = await callOpenRouter(getNextKey(), model, messages, origin);
-      if (result.ok) {
-        return NextResponse.json({ reply: result.reply, model });
+    const retryable = (status: number) => status === 401 || status === 402 || status === 404 || status === 429 || status >= 500;
+    const tryModel = async (candidate: string) => {
+      for (let attempt = 0; attempt < keys; attempt++) {
+        const result = await callOpenRouter(getNextKey(), candidate, messages, origin);
+        if (result.ok) return result;
+        lastStatus = result.status;
+        lastMessage = result.message;
+        if (!retryable(result.status)) break;
       }
-      lastStatus = result.status;
-      lastMessage = result.message;
-      if (![401, 402, 429].includes(result.status)) break;
-    }
+      return null;
+    };
 
-    // Modelo escolhido falhou → 1 tentativa com o modelo padrão
-    if (model !== DEFAULT_MODEL && (lastStatus === 0 || lastStatus >= 400)) {
-      console.warn(`[ORBIT-OR] modelo ${model} falhou (HTTP ${lastStatus}) → fallback para ${DEFAULT_MODEL}`);
-      const fallbackResult = await callOpenRouter(getNextKey(), DEFAULT_MODEL, messages, origin);
-      if (fallbackResult.ok) {
-        return NextResponse.json({
-          reply: fallbackResult.reply,
-          model: DEFAULT_MODEL,
-          notice: `⚠️ Modelo ${model} indisponível, usando ${DEFAULT_MODEL}.`,
-        });
+    const selectedResult = await tryModel(model);
+    if (selectedResult) return NextResponse.json({ reply: selectedResult.reply, model });
+
+    let freeModels: HubModel[] = [];
+    try {
+      freeModels = (await fetchCatalog()).filter((candidate) => candidate.free && candidate.id.endsWith(":free")).slice(0, 3);
+    } catch {}
+    for (const candidate of freeModels) {
+      if (candidate.id === model) continue;
+      const result = await tryModel(candidate.id);
+      if (result) {
+        return NextResponse.json({ reply: result.reply, model: candidate.id, notice: `Modelo ${model} indisponível; usando uma alternativa gratuita.` });
       }
-      lastStatus = fallbackResult.status;
-      lastMessage = fallbackResult.message;
     }
 
     const httpStatus = [400, 401, 402, 404, 429].includes(lastStatus) ? lastStatus : 502;
