@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { readOrbitModel, setOrbitModel } from "@/lib/orbit-model";
+import { RECOMMENDED_MODELS } from "@/lib/ai/openrouter";
 
 // ─────────────────────────────────────────────────────────────
 // HUB DE INTELIGÊNCIAS — conexão com TODAS as IAs.
@@ -385,12 +386,18 @@ export default function IntelligenceHub({
               className="mt-3 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-[13px] text-zinc-900 dark:border-white/15 dark:bg-[#0C0C0F] dark:text-zinc-100"
             >
               <option value="">🪐 Gemini nativo (grátis)</option>
+              {RECOMMENDED_MODELS.filter((m) => m.id !== "openrouter/auto").map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
               {openrouter.models
                 .filter((model) =>
                   ["openai", "anthropic", "deepseek", "z-ai"].includes(
                     model.family,
                   ),
                 )
+                .filter((model) => !RECOMMENDED_MODELS.some((m) => m.id === model.id))
                 .map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name}

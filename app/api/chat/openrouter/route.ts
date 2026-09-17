@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { getNextKey, getKeyCount } from "@/lib/openrouter_keys";
+import { getKeyCount, getNextKey } from "@/lib/openrouter_keys";
+import {
+  OPENROUTER_BASE,
+  DEFAULT_MODEL,
+  callOpenRouter,
+  friendlyError,
+  type OpenAiMessage,
+} from "@/lib/ai/openrouter";
 import { SYSTEM_TEXT, extractSearchQuery, searchMercadoLivre } from "@/lib/chat-system";
 
 export const maxDuration = 60;
@@ -21,15 +28,16 @@ export const maxDuration = 60;
 // do pool antes de falhar.
 // ─────────────────────────────────────────────────────────────
 
-const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
-const DEFAULT_MODEL = "openrouter/auto";
+// ─────────────────────────────────────────────────────────────
+// OPENROUTER_BASE, DEFAULT_MODEL, friendlyError e OpenAiMessage
+// agora vivem em lib/ai/openrouter.ts (client reutilizável).
+// ─────────────────────────────────────────────────────────────
 
 // GET sem parâmetro de request seria pré-renderizado no build — forçamos
 // execução dinâmica (o pool de chaves é lido em tempo de execução).
 export const dynamic = "force-dynamic";
 
 type HubModel = { id: string; name: string; family: string; context: number | null; free: boolean };
-type OpenAiMessage = { role: "system" | "user" | "assistant"; content: string };
 
 // ── Catálogo público de modelos (não exige chave) ──
 const CATALOG_FAMILIES = ["openai", "anthropic", "deepseek", "z-ai"];
@@ -107,72 +115,6 @@ export async function GET() {
     models = FALLBACK_CATALOG;
   }
   return NextResponse.json({ available: true, keys, models });
-}
-
-type OpenRouterResult = { ok: true; reply: string } | { ok: false; status: number; message: string };
-
-async function callOpenRouter(
-  key: string,
-  model: string,
-  messages: OpenAiMessage[],
-  origin: string
-): Promise<OpenRouterResult> {
-  try {
-    const res = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        // Atribuição opcional do app nos rankings do OpenRouter
-        "HTTP-Referer": origin || "https://orbit.app",
-        "X-Title": "Orbit",
-      },
-      body: JSON.stringify({ model, messages }),
-      signal: AbortSignal.timeout(120_000),
-    });
-
-    const data: unknown = await res.json().catch(() => null);
-
-    if (!res.ok) {
-      const apiMessage =
-        (data as { error?: { message?: string } } | null)?.error?.message?.slice(0, 300) ?? "";
-      console.error(`[ORBIT-OR] modelo ${model} falhou com HTTP ${res.status}: ${apiMessage}`);
-      return { ok: false, status: res.status, message: apiMessage };
-    }
-
-    const reply =
-      (data as { choices?: Array<{ message?: { content?: string | null } }> } | null)?.choices?.[0]
-        ?.message?.content ?? "";
-    if (!reply.trim()) {
-      return { ok: false, status: 502, message: "resposta vazia do modelo" };
-    }
-    return { ok: true, reply };
-  } catch (e) {
-    console.error("[ORBIT-OR] erro de rede/timeout:", e);
-    return { ok: false, status: 0, message: e instanceof Error ? e.message : "falha de rede" };
-  }
-}
-
-// ── erros amigáveis + POST ──
-
-// 402/429/401 com texto claro — a UI só exibe; o chat continua utilizável.
-function friendlyError(status: number, apiMessage: string, model: string): string {
-  if (status === 402) {
-    return `💳 O modelo ${model} está sem crédito na conta OpenRouter (402 — Payment Required). Adicione créditos em openrouter.ai/credits ou escolha outro modelo no Hub 🧠. O chat continua funcionando normalmente.`;
-  }
-  if (status === 429) {
-    return `⏳ O modelo ${model} atingiu o limite de uso agora (429 — rate limit). Aguarde alguns segundos, troque de modelo no Hub 🧠 ou continue no Orbit (Gemini).`;
-  }
-  if (status === 401) {
-    return "🔑 A chave OpenRouter do servidor foi recusada (401 — inválida). Confira a OPENROUTER_API_KEY no .env.local.";
-  }
-  if (status === 404 || status === 400) {
-    return `❓ O modelo ${model} não está disponível via OpenRouter (${status}). Escolha outro modelo no Hub 🧠.${apiMessage ? ` Detalhe: ${apiMessage}` : ""}`;
-  }
-  if (status === 0) {
-    return "🌐 Não consegui falar com o OpenRouter agora (rede/timeout). Tente novamente ou continue no Orbit (Gemini).";
-  }
-  return `⚠️ O modelo ${model} falhou (${status || "erro"}). Tente outro modelo no Hub 🧠 ou continue no Orbit (Gemini).${apiMessage ? ` Detalhe: ${apiMessage}` : ""}`;
 }
 
 // Histórico no formato Gemini da UI ({role: "user"|"model", parts:[{text}]})
