@@ -45,9 +45,12 @@ export const fal: ImageProvider = {
     // Baixa a URL e converte para base64 (padrão único na resposta)
     const imageRes = await fetchWithTimeout(imageUrl, {}, 20_000);
     if (!imageRes.ok) throw new ProviderError(`fal: falha ao baixar imagem (${imageRes.status})`);
+    const declaredType = data.images?.[0]?.content_type;
     const mime = imageRes.headers.get("content-type")?.startsWith("image/")
       ? imageRes.headers.get("content-type")!
-      : data.images[0]!.content_type ?? "image/png";
+      : declaredType && declaredType.startsWith("image/")
+        ? declaredType
+        : "image/png";
     return {
       base64: bufferToBase64(await imageRes.arrayBuffer()),
       mime,

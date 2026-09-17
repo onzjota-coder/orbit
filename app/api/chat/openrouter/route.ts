@@ -222,6 +222,7 @@ export async function POST(req: Request) {
     }
 
     // Rodízio: 401/402/429 em uma chave → tenta a próxima do pool antes de falhar
+    // FALLBACK DE MODELO: se o modelo pedido falhar, tenta 1x o padrão e avisa.
     let lastStatus = 0;
     let lastMessage = "";
     for (let attempt = 0; attempt < keys; attempt++) {
@@ -232,6 +233,21 @@ export async function POST(req: Request) {
       lastStatus = result.status;
       lastMessage = result.message;
       if (![401, 402, 429].includes(result.status)) break;
+    }
+
+    // Modelo escolhido falhou → 1 tentativa com o modelo padrão
+    if (model !== DEFAULT_MODEL && (lastStatus === 0 || lastStatus >= 400)) {
+      console.warn(`[ORBIT-OR] modelo ${model} falhou (HTTP ${lastStatus}) → fallback para ${DEFAULT_MODEL}`);
+      const fallbackResult = await callOpenRouter(getNextKey(), DEFAULT_MODEL, messages, origin);
+      if (fallbackResult.ok) {
+        return NextResponse.json({
+          reply: fallbackResult.reply,
+          model: DEFAULT_MODEL,
+          notice: `⚠️ Modelo ${model} indisponível, usando ${DEFAULT_MODEL}.`,
+        });
+      }
+      lastStatus = fallbackResult.status;
+      lastMessage = fallbackResult.message;
     }
 
     const httpStatus = [400, 401, 402, 404, 429].includes(lastStatus) ? lastStatus : 502;
