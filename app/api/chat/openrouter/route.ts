@@ -8,6 +8,7 @@ import {
   type OpenAiMessage,
 } from "@/lib/ai/openrouter";
 import { SYSTEM_TEXT, extractSearchQuery, searchMercadoLivre } from "@/lib/chat-system";
+import { chatSelectionFromModel } from "@/lib/orbit-model";
 
 export const maxDuration = 60;
 
@@ -38,6 +39,36 @@ export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 type HubModel = { id: string; name: string; family: string; context: number | null; free: boolean };
+
+function responseMetadata(requestedModel: string, effectiveModel: string) {
+  const selection = chatSelectionFromModel(requestedModel);
+  return {
+    requestedProvider: "openrouter",
+    effectiveProvider: "openrouter",
+    requestedModel,
+    effectiveModel,
+    fallbackUsed: requestedModel !== effectiveModel,
+    logicalProvider: selection.logicalProvider,
+    technicalProvider: selection.technicalProvider,
+  };
+}
+
+function streamHeaders(model: string): HeadersInit {
+  const metadata = responseMetadata(model, model);
+  return {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+    "X-Orbit-Requested-Provider": metadata.requestedProvider,
+    "X-Orbit-Effective-Provider": metadata.effectiveProvider,
+    "X-Orbit-Requested-Model": metadata.requestedModel,
+    "X-Orbit-Effective-Model": metadata.effectiveModel,
+    "X-Orbit-Fallback-Used": String(metadata.fallbackUsed),
+    "X-Orbit-Logical-Provider": metadata.logicalProvider,
+    "X-Orbit-Technical-Provider": metadata.technicalProvider,
+  };
+}
 
 // ── Catálogo público de modelos (não exige chave) ──
 const CATALOG_FAMILIES = ["openai", "anthropic", "deepseek", "z-ai"];
@@ -149,6 +180,8 @@ export async function POST(req: Request) {
       history?: unknown;
       model?: unknown;
       stream?: unknown;
+      provider?: unknown;
+      logicalProvider?: unknown;
     } | null;
 
     const message = typeof body?.message === "string" ? body.message : "";
@@ -202,14 +235,7 @@ export async function POST(req: Request) {
         );
       }
 
-      return new Response(streamRes.body, {
-        headers: {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive",
-          "X-Accel-Buffering": "no",
-        },
-      });
+      return new Response(streamRes.body, { headers: streamHeaders(model) });
     }
 
     // Rodízio: falhas de autenticação, crédito, limite ou servidor tentam outra chave.
@@ -228,7 +254,13 @@ export async function POST(req: Request) {
     };
 
     const selectedResult = await tryModel(model);
-    if (selectedResult) return NextResponse.json({ reply: selectedResult.reply, model });
+    if (selectedResult) {
+      return NextResponse.json({
+        reply: selectedResult.reply,
+        model,
+        ...responseMetadata(model, model),
+      });
+    }
 
     let freeModels: HubModel[] = [];
     try {
@@ -238,7 +270,12 @@ export async function POST(req: Request) {
       if (candidate.id === model) continue;
       const result = await tryModel(candidate.id);
       if (result) {
-        return NextResponse.json({ reply: result.reply, model: candidate.id, notice: `Modelo ${model} indisponível; usando uma alternativa gratuita.` });
+        return NextResponse.json({
+          reply: result.reply,
+          model: candidate.id,
+          notice: `Modelo ${model} indisponível; usando uma alternativa gratuita.`,
+          ...responseMetadata(model, candidate.id),
+        });
       }
     }
 

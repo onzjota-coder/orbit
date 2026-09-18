@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { readOrbitModel, setOrbitModel } from "@/lib/orbit-model";
+import {
+  chatLogicalProviderLabel,
+  chatSelectionFromModel,
+  readOrbitModel,
+  setOrbitModel,
+} from "@/lib/orbit-model";
 
 // ─────────────────────────────────────────────────────────────
 // HUB DE INTELIGÊNCIAS — conexão com TODAS as IAs.
@@ -146,10 +151,7 @@ export default function IntelligenceHub({
           if (alive && data.available && Array.isArray(data.models)) {
             setOpenrouter({ keys: data.keys ?? 1, models: data.models });
             const saved = readOrbitModel();
-            if (saved && !data.models.some((model) => model.id === saved)) {
-              setOrbitModel("");
-              setActiveModel("");
-            } else if (saved && !saved.endsWith(":free")) {
+            if (saved && !saved.endsWith(":free")) {
               setShowPremiumModels(true);
             }
           }
@@ -181,6 +183,17 @@ export default function IntelligenceHub({
     setActiveModel(model);
     if (open) onOpenOrbit();
   }
+
+  const activeHubModel = openrouter?.models.find(
+    (model) => model.id === activeModel,
+  );
+  const activeSelection = chatSelectionFromModel(
+    activeModel,
+    activeHubModel?.family,
+  );
+  const activeProviderLabel = chatLogicalProviderLabel(
+    activeSelection.logicalProvider,
+  );
 
   function notifyMe(id: string) {
     if (notify.includes(id)) return;
@@ -399,19 +412,29 @@ export default function IntelligenceHub({
               <option value="">🪐 Gemini nativo (grátis)</option>
               {openrouter.models
                 .filter((model) => model.id.endsWith(":free"))
-                .map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name} · grátis
-                  </option>
-                ))}
+                .map((model) => {
+                  const provider = chatLogicalProviderLabel(
+                    chatSelectionFromModel(model.id, model.family).logicalProvider,
+                  );
+                  return (
+                    <option key={model.id} value={model.id}>
+                      {provider} — {model.name} · grátis · via OpenRouter
+                    </option>
+                  );
+                })}
               {showPremiumModels &&
                 openrouter.models
                   .filter((model) => !model.id.endsWith(":free"))
-                  .map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name} · premium
-                    </option>
-                  ))}
+                  .map((model) => {
+                    const provider = chatLogicalProviderLabel(
+                      chatSelectionFromModel(model.id, model.family).logicalProvider,
+                    );
+                    return (
+                      <option key={model.id} value={model.id}>
+                        {provider} — {model.name} · premium · via OpenRouter
+                      </option>
+                    );
+                  })}
             </select>
             <button
               type="button"
@@ -429,8 +452,8 @@ export default function IntelligenceHub({
             )}
             <p className="mt-2 text-[11.5px] text-zinc-400 dark:text-zinc-500">
               {activeModel
-                ? `Ativo: ${activeModel} — via OpenRouter.`
-                : "Gemini nativo — padrão."}
+                ? `Provider: ${activeProviderLabel} · Modelo: ${activeModel} · Atendido via OpenRouter.`
+                : "Provider: Gemini · Gemini nativo · padrão."}
             </p>
           </div>
         )}

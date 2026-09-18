@@ -36,6 +36,8 @@ export type ProviderStatus = {
   models: ImageProvider["models"];
   configured: boolean;
   missingEnv: string[];
+  capabilities: NonNullable<ImageProvider["capabilities"]>;
+  usage: { requests: number; tokens: null; status: "unknown"; quota: string; lastUsed: null };
 };
 
 /** Status de configuração para a UI (nunca expõe valores de chave). */
@@ -50,6 +52,8 @@ export function providersStatus(): ProviderStatus[] {
       models: p.models,
       configured: p.isConfigured(),
       missingEnv,
+      capabilities: p.capabilities ?? ["image"],
+      usage: { requests: 0, tokens: null, status: "unknown", quota: "Quota não informada pelo provedor", lastUsed: null },
     };
   });
 }

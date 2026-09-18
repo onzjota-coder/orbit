@@ -5,6 +5,7 @@ import { jsPDF } from "jspdf";
 import Logo from "./logo";
 import {
   ORBIT_MODEL_EVENT,
+  chatSelectionFromModel,
   orbitModelFamily,
   readOrbitModel,
   setOrbitModel,
@@ -47,8 +48,16 @@ function getUsage(): number {
   const today = new Date().toDateString();
   const raw = localStorage.getItem("orbit_usage");
   if (!raw) return 0;
-  const data = JSON.parse(raw);
-  return data.date === today ? data.count : 0;
+  try {
+    const data: unknown = JSON.parse(raw);
+    if (!data || typeof data !== "object") return 0;
+    const { date, count } = data as { date?: unknown; count?: unknown };
+    return date === today && typeof count === "number" && Number.isFinite(count) && count >= 0
+      ? Math.floor(count)
+      : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function bumpUsage(): number {
@@ -285,7 +294,14 @@ export default function OrbitChat({
   }, []);
 
   async function requestChat(message: string, history: unknown) {
-    const payload = { message, history, ...(model ? { model } : {}) };
+    const selection = chatSelectionFromModel(model);
+    const payload = {
+      message,
+      history,
+      provider: selection.technicalProvider,
+      logicalProvider: selection.logicalProvider,
+      ...(model ? { model } : {}),
+    };
     if (!model) {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -320,26 +336,77 @@ export default function OrbitChat({
     const fallback = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message, history }),
+      body: JSON.stringify({
+        message,
+        history,
+        provider: "gemini",
+        logicalProvider: "gemini",
+      }),
     });
-    return fallback.json();
+    const fallbackData = await fallback.json();
+    return {
+      ...fallbackData,
+      requestedProvider: "openrouter",
+      requestedModel: model,
+      effectiveProvider: fallbackData.effectiveProvider ?? "gemini",
+      fallbackUsed: true,
+    };
   }
 
   async function streamChat(
     message: string,
     history: unknown,
     forceGemini = false,
-  ): Promise<{ ok: boolean; text: string; warning?: string; fallback?: boolean; fallbackModel?: string }> {
+  ): Promise<{
+    ok: boolean;
+    text: string;
+    warning?: string;
+    fallback?: boolean;
+    requestedProvider?: string;
+    effectiveProvider?: string;
+    requestedModel?: string;
+    effectiveModel?: string;
+    fallbackUsed?: boolean;
+  }> {
     const useOpenRouter = Boolean(model) && !forceGemini;
     const requestedModel = model;
-    async function tryOpenRouterFallback(): Promise<{ ok: boolean; text: string; fallbackModel?: string }> {
+    const requestedSelection = chatSelectionFromModel(useOpenRouter ? model : "");
+    const originFromHeaders = (response: Response) => ({
+      requestedProvider: response.headers.get("X-Orbit-Requested-Provider") ?? requestedSelection.technicalProvider,
+      effectiveProvider: response.headers.get("X-Orbit-Effective-Provider") ?? requestedSelection.technicalProvider,
+      requestedModel: response.headers.get("X-Orbit-Requested-Model") ?? requestedModel,
+      effectiveModel: response.headers.get("X-Orbit-Effective-Model") ?? requestedModel,
+      fallbackUsed: response.headers.get("X-Orbit-Fallback-Used") === "true",
+    });
+    async function tryOpenRouterFallback(): Promise<{
+      ok: boolean;
+      text: string;
+      requestedProvider?: string;
+      effectiveProvider?: string;
+      requestedModel?: string;
+      effectiveModel?: string;
+      fallbackUsed?: boolean;
+    }> {
       try {
         const response = await fetch("/api/chat/openrouter", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, history, model: requestedModel }),
+          body: JSON.stringify({
+            message,
+            history,
+            model: requestedModel,
+            provider: "openrouter",
+            logicalProvider: requestedSelection.logicalProvider,
+          }),
         });
-        const data = (await response.json().catch(() => ({}))) as { reply?: string; model?: string };
+        const data = (await response.json().catch(() => ({}))) as {
+          reply?: string;
+          requestedProvider?: string;
+          effectiveProvider?: string;
+          requestedModel?: string;
+          effectiveModel?: string;
+          fallbackUsed?: boolean;
+        };
         if (response.ok && typeof data.reply === "string" && data.reply) {
           setMessages((prev) => {
             const next = [...prev];
@@ -347,7 +414,15 @@ export default function OrbitChat({
             if (last && last.role === "orbit") last.text = data.reply!;
             return next;
           });
-          return { ok: true, text: data.reply, fallbackModel: data.model !== requestedModel ? requestedModel : undefined };
+          return {
+            ok: true,
+            text: data.reply,
+            requestedProvider: data.requestedProvider ?? "openrouter",
+            effectiveProvider: data.effectiveProvider ?? "openrouter",
+            requestedModel: data.requestedModel ?? requestedModel,
+            effectiveModel: data.effectiveModel ?? requestedModel,
+            fallbackUsed: data.fallbackUsed === true,
+          };
         }
       } catch {}
       return { ok: false, text: "" };
@@ -356,6 +431,8 @@ export default function OrbitChat({
       message,
       history,
       stream: true,
+      provider: requestedSelection.technicalProvider,
+      logicalProvider: requestedSelection.logicalProvider,
       ...(useOpenRouter ? { model } : {}),
     };
     const endpoint = useOpenRouter ? "/api/chat/openrouter" : "/api/chat";
@@ -371,11 +448,19 @@ export default function OrbitChat({
         await response.json().catch(() => ({}));
         if (useOpenRouter) {
           const alternate = await tryOpenRouterFallback();
-          if (alternate.ok) return { ...alternate, fallback: Boolean(alternate.fallbackModel) };
+          if (alternate.ok) return { ...alternate, fallback: alternate.fallbackUsed === true };
           setOrbitModel("");
           setModel("");
           const fallback = await streamChat(message, history, true);
-          return fallback.ok ? { ...fallback, fallback: true, fallbackModel: requestedModel } : fallback;
+          return fallback.ok
+            ? {
+                ...fallback,
+                fallback: true,
+                requestedProvider: "openrouter",
+                requestedModel,
+                fallbackUsed: true,
+              }
+            : fallback;
         }
         return { ok: false, text: "", warning: "Não consegui conectar ao Gemini agora." };
       }
@@ -499,11 +584,19 @@ export default function OrbitChat({
       if (!sawContent) {
         if (useOpenRouter) {
           const alternate = await tryOpenRouterFallback();
-          if (alternate.ok) return { ...alternate, fallback: Boolean(alternate.fallbackModel) };
+          if (alternate.ok) return { ...alternate, fallback: alternate.fallbackUsed === true };
           setOrbitModel("");
           setModel("");
           const fallback = await streamChat(message, history, true);
-          return fallback.ok ? { ...fallback, fallback: true, fallbackModel: requestedModel } : fallback;
+          return fallback.ok
+            ? {
+                ...fallback,
+                fallback: true,
+                requestedProvider: "openrouter",
+                requestedModel,
+                fallbackUsed: true,
+              }
+            : fallback;
         }
         return {
           ok: false,
@@ -512,16 +605,24 @@ export default function OrbitChat({
         };
       }
 
-      return { ok: true, text };
+      return { ok: true, text, ...originFromHeaders(response) };
     } catch (error) {
       console.error("[ORBIT] Stream falhou:", error);
       if (useOpenRouter) {
         const alternate = await tryOpenRouterFallback();
-        if (alternate.ok) return { ...alternate, fallback: Boolean(alternate.fallbackModel) };
+        if (alternate.ok) return { ...alternate, fallback: alternate.fallbackUsed === true };
         setOrbitModel("");
         setModel("");
         const fallback = await streamChat(message, history, true);
-        return fallback.ok ? { ...fallback, fallback: true, fallbackModel: requestedModel } : fallback;
+        return fallback.ok
+          ? {
+              ...fallback,
+              fallback: true,
+              requestedProvider: "openrouter",
+              requestedModel,
+              fallbackUsed: true,
+            }
+          : fallback;
       }
       return {
         ok: false,
@@ -692,6 +793,8 @@ export default function OrbitChat({
   // Detecta a escolha do estilo aceitando número ou nome por extenso
   function detectStyle(text: string): string | null {
     const t = text.toLowerCase().trim();
+    const terminalStyle = t.match(/,\s*([123])\s*$/);
+    if (terminalStyle) return terminalStyle[1];
     const styleMap: [RegExp, string][] = [
       [/^(1|fundo branco|branco)/, "1"],
       [/^(2|fundo transparente|transparente|png)/, "2"],
@@ -1397,7 +1500,9 @@ export default function OrbitChat({
           const next = [...m];
           const last = next[next.length - 1];
           if (last && last.role === "orbit") {
-            last.text += `\n\n(respondido via Gemini — modelo ${result.fallbackModel ?? "selecionado"} indisponível)`;
+            const provider = result.effectiveProvider === "gemini" ? "Gemini" : "OpenRouter";
+            const model = result.effectiveModel ?? "alternativo";
+            last.text += `\n\n(respondido via ${provider} — modelo ${model})`;
           }
           return next;
         });

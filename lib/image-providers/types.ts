@@ -12,6 +12,9 @@ export type GenerateParams = {
   seed?: number;
 };
 
+/** Declared capabilities let the registry grow beyond image generation. */
+export type ProviderCapability = "text" | "image" | "vision";
+
 export type GeneratedImage = {
   /** base64 puro (sem prefixo data:) OU url — pelo menos um */
   base64?: string;
@@ -37,6 +40,7 @@ export interface ImageProvider {
   label: string;
   /** variáveis .env que o provedor precisa (todas ou nenhuma) */
   envKeys: string[];
+  capabilities?: ProviderCapability[];
   models: { id: string; label: string; costHint?: string }[];
   isConfigured(): boolean;
   generate(p: GenerateParams): Promise<GeneratedImage>;

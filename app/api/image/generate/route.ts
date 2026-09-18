@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { IMAGE_PROVIDERS, fallbackChain, getProvider, providersStatus } from "@/lib/image-providers/registry";
+import { rateLimit, safeError } from "@/lib/api/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,8 @@ const NEGATIVE =
 type Attempt = { provider: string; ok: boolean; status?: number; ms: number };
 
 export async function POST(req: Request) {
+  const limited = rateLimit(req, "image-generate", 10, 60_000);
+  if (limited) return limited;
   const body = await req.json().catch(() => null);
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) {
@@ -46,6 +49,9 @@ export async function POST(req: Request) {
 
   // Provedor pedido existe? (se não existir ou não configurado → chain padrão)
   const requested = provider ? getProvider(provider) : undefined;
+  if (provider && !requested) {
+    return NextResponse.json({ error: "Provedor de imagem inválido." }, { status: 400 });
+  }
   const chain = requested ? fallbackChain(requested.id) : fallbackChain("");
 
   const attempts: Attempt[] = [];
@@ -72,7 +78,8 @@ export async function POST(req: Request) {
             provider: image.provider,
             model: image.model,
             latencyMs: image.latencyMs,
-            fallbackUsed: p.id !== (provider ?? p.id),
+            requestedProvider: provider ?? null,
+            fallbackUsed: Boolean(provider && p.id !== provider),
             attempts,
           });
         }
@@ -80,7 +87,7 @@ export async function POST(req: Request) {
         const status = error instanceof Error && "status" in error ? (error as { status?: number }).status : undefined;
         console.error(
           `[IMG-GEN] ${p.id} tentativa ${attempt + 1} falhou${status ? ` (HTTP ${status})` : ""}:`,
-          error instanceof Error ? error.message : error,
+          safeError(error),
         );
         attempts.push({ provider: p.id, ok: false, status, ms: Date.now() - started });
       }

@@ -34,12 +34,7 @@ export function getNextKey(service = "gemini"): string {
   if (pool.keys.length === 0) return "";
 
   const key = pool.keys[pool.index % pool.keys.length];
-  const n = (pool.index % pool.keys.length) + 1;
   pool.index += 1;
-
-  if (typeof window === "undefined") {
-    console.log(`🔑 Pool de chaves ${normalized}: usando chave #${n} (...${key.slice(-4)})`);
-  }
 
   return key;
 }

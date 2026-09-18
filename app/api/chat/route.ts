@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getKeyCount, getNextKey } from "@/lib/gemini_keys";
+import { rateLimit } from "@/lib/api/rate-limit";
 
 export const maxDuration = 60;
 
@@ -9,6 +11,29 @@ const MODELS = [
   "gemini-flash-lite-latest",
   "gemini-2.5-flash",
 ];
+
+const GEMINI_PROVIDER_METADATA = {
+  requestedProvider: "gemini",
+  effectiveProvider: "gemini",
+  requestedModel: MODELS[0],
+  fallbackUsed: false,
+} as const;
+
+function streamHeaders(effectiveModel: string): HeadersInit {
+  return {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+    "X-Orbit-Requested-Provider": GEMINI_PROVIDER_METADATA.requestedProvider,
+    "X-Orbit-Effective-Provider": GEMINI_PROVIDER_METADATA.effectiveProvider,
+    "X-Orbit-Requested-Model": GEMINI_PROVIDER_METADATA.requestedModel,
+    "X-Orbit-Effective-Model": effectiveModel,
+    "X-Orbit-Fallback-Used": "false",
+    "X-Orbit-Logical-Provider": "gemini",
+    "X-Orbit-Technical-Provider": "gemini",
+  };
+}
 
 const SYSTEM_TEXT = `REGRA ABSOLUTA DE FORMATO: sua resposta NUNCA deve começar ou conter rótulos internos como "CLASSIFICAÇÃO:", "INTENÇÃO:", "PERGUNTA" ou "VENDA" — decisões internas são invisíveis ao usuário. Comece diretamente com a resposta.
 
@@ -46,13 +71,17 @@ async function callGemini(contents: object[]) {
   let lastError = "";
 
   for (const model of MODELS) {
+    const keys = getKeyCount();
+    for (let attempt = 0; attempt < Math.max(keys, 1); attempt++) {
+      const key = getNextKey();
+      if (!key) return { ok: false as const, error: "sem_chave" };
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": process.env.GEMINI_API_KEY ?? "",
+          "x-goog-api-key": key,
         },
         body: JSON.stringify({
           contents,
@@ -66,15 +95,16 @@ async function callGemini(contents: object[]) {
       const reply = data?.candidates?.[0]?.content?.parts
         ?.map((p: { text?: string }) => p.text ?? "")
         .join("");
-      if (reply) return { ok: true as const, reply };
+      if (reply) return { ok: true as const, reply, model };
       lastError = "resposta vazia";
       continue;
     }
 
     const errText = await res.text();
-    console.error(`ERRO GEMINI (${model}):`, res.status, errText);
+    console.error(`ERRO GEMINI (${model}):`, res.status);
     lastError = `${res.status}`;
     if (res.status !== 503 && res.status !== 429) break;
+    }
   }
 
   return { ok: false as const, error: lastError };
@@ -140,10 +170,14 @@ function extractSearchQuery(message: string): string | null {
 
 export async function POST(req: Request) {
   try {
+    const limited = rateLimit(req, "chat", 30, 60_000);
+    if (limited) return limited;
     const body = (await req.json().catch(() => null)) as {
       message?: unknown;
       history?: unknown;
       stream?: unknown;
+      provider?: unknown;
+      logicalProvider?: unknown;
     } | null;
 
     const message = typeof body?.message === "string" ? body.message : "";
@@ -177,12 +211,14 @@ export async function POST(req: Request) {
     ];
 
     if (stream) {
+      const key = getNextKey();
+      if (!key) return NextResponse.json({ error: "IA não configurada no servidor." }, { status: 503 });
       const streamUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS[0]}:streamGenerateContent?alt=sse`;
       const upstream = await fetch(streamUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": process.env.GEMINI_API_KEY ?? "",
+          "x-goog-api-key": key,
         },
         body: JSON.stringify({
           contents,
@@ -191,22 +227,14 @@ export async function POST(req: Request) {
       });
 
       if (!upstream.ok || !upstream.body) {
-        const errText = await upstream.text().catch(() => "");
-        console.error("ERRO GEMINI STREAM:", upstream.status, errText.slice(0, 300));
+        console.error("ERRO GEMINI STREAM:", upstream.status);
         return NextResponse.json(
           { error: "A IA está com alta demanda agora. Aguarde alguns segundos e tente novamente." },
           { status: 502 }
         );
       }
 
-      return new Response(upstream.body, {
-        headers: {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive",
-          "X-Accel-Buffering": "no",
-        },
-      });
+      return new Response(upstream.body, { headers: streamHeaders(MODELS[0]) });
     }
 
     const result = await callGemini(contents);
@@ -218,7 +246,14 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({ reply: result.reply, limit: DAILY_LIMIT });
+    return NextResponse.json({
+      reply: result.reply,
+      limit: DAILY_LIMIT,
+      ...GEMINI_PROVIDER_METADATA,
+      effectiveModel: result.model,
+      logicalProvider: "gemini",
+      technicalProvider: "gemini",
+    });
   } catch {
     return NextResponse.json({ error: "Erro inesperado." }, { status: 500 });
   }

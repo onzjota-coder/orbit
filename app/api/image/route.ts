@@ -78,7 +78,7 @@ async function tryGemini(
   for (const model of IMAGE_MODELS) {
     for (let k = 0; k < keyCount; k++) {
       const key = getNextKey();
-      console.log(`🖼️ Gemini: modelo=${model} chave=#${k + 1}`);
+      console.log(`Gemini: modelo=${model}`);
       try {
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,

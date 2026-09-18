@@ -13,6 +13,7 @@ export const gemini: ImageProvider = {
   id: "gemini",
   label: "Google Gemini (Flash Image)",
   envKeys: ["GEMINI_API_KEY"],
+  capabilities: ["image", "text", "vision"],
   models: [
     { id: "gemini-2.5-flash-image", label: "Gemini 2.5 Flash Image", costHint: "free tier AI Studio" },
     { id: "gemini-2.0-flash-exp-image-generation", label: "Gemini 2.0 Flash (exp)", costHint: "free tier" },

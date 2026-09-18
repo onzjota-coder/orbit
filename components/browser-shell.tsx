@@ -9,39 +9,24 @@ import IntelligenceHub from "./intelligence-hub";
 import OrbitExternal from "./orbit-external";
 import StarfieldBackground from "./starfield-background";
 import { BLOCKED_TRACKERS } from "@/lib/blocklist";
-
-type TabType =
-  | "home"
-  | "iframe"
-  | "orbit-chat"
-  | "youtube"
-  | "youtube-search"
-  | "inteligencias"
-  | "arena"
-  | "privacidade";
-
-type Tab = {
-  id: string;
-  title: string;
-  type: TabType;
-  url?: string;
-  ghost?: boolean; // MODO FANTASMA: nunca persistida
-  unverified?: boolean; // 🛡️ Tarefa 6: domínio suspeito que o usuário decidiu abrir mesmo assim
-  // TAREFA 2 — aviso de golpe DENTRO da aba (nunca modal antes dela)
-  scamBrand?: string;
-  scamOfficial?: string;
-  scamDismissed?: boolean;
-};
-
-type Favorite = { title: string; url: string; folder?: string };
+import { resolveFavicon } from "@/lib/favicon";
+import { type Tab, type TabType, normalizeTabs } from "@/lib/browser-tabs";
+import { domainOf, normalizeFavoriteUrl } from "@/lib/browser-url";
+import {
+  type Favorite,
+  type UrlHistoryItem,
+  readFavorites,
+  readUrlHistory,
+  writeFavorites,
+  writeUrlHistory,
+  URL_HISTORY_MAX,
+} from "@/lib/browser-storage";
 
 // TAREFA 20 — atalhos da home com anel (ring) da cor da marca
 type HomeShortcut = Favorite & { ring: string; shadow: string };
 type HomeApp = { category: string; icon: string; title: string; url: string };
 
 // TAREFA 18 — item do histórico de navegação local
-type UrlHistoryItem = { title: string; url: string; at: number };
-
 const ORBIT_TAB_ID = "orbit";
 const HOME_TAB_ID = "home";
 const ARENA_TAB_ID = "arena";
@@ -49,8 +34,7 @@ const PRIVACY_TAB_ID = "privacidade";
 
 const SIDEBAR_KEY = "orbit_sidebar"; // TAREFA 12 — sidebar persistente
 const TRUSTED_KEY = "orbit_trusted"; // TAREFA 25 — zona de confiança
-const URL_HISTORY_KEY = "orbit_history"; // TAREFA 18 — histórico de navegação
-const URL_HISTORY_MAX = 200;
+const ACTIVE_TAB_KEY = "orbit_active_tab";
 
 // TAREFA 2 — YouTube: domínio normal (youtube-nocookie causava Erro 153) + origin
 // TAREFA 2 — origin da app + playsinline (sem origin o YouTube devolve Erro 153)
@@ -387,14 +371,6 @@ function isCuratedIframeUrl(url: string): boolean {
   }
 }
 
-function domainOf(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
 function isBlockedFrame(url: string): boolean {
   try {
     const u = new URL(url);
@@ -467,22 +443,6 @@ const WHITELIST = [
   "notion.site",
   "github.com",
 ];
-
-function readUrlHistory(): UrlHistoryItem[] {
-  try {
-    const raw = localStorage.getItem("orbit_history");
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeUrlHistory(items: UrlHistoryItem[]): void {
-  try {
-    localStorage.setItem("orbit_history", JSON.stringify(items.slice(-200)));
-  } catch {}
-}
 
 function getTrustedHosts(): string[] {
   try {
@@ -568,7 +528,7 @@ function matchedTracker(url: string): string | null {
 }
 
 function faviconFor(url: string): string {
-  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domainOf(url))}&sz=32`;
+  return resolveFavicon(url);
 }
 
 // Home do YouTube (sem vídeo específico) → página especial com buscador interno
@@ -623,9 +583,7 @@ function smartBarAnswer(raw: string): string | null {
 
 // TAREFA 1 — resolução do campo de URL. Texto livre NUNCA vira iframe bloqueado:
 // vai direto para o Google numa nova aba do sistema (external: true).
-function resolveUrlInput(
-  raw: string,
-): { url: string; title: string; external?: boolean } | null {
+function resolveUrlInput(raw: string): { url: string; title: string; external?: boolean } | null {
   const input = raw.trim();
   if (!input) return null;
 
@@ -641,7 +599,6 @@ function resolveUrlInput(
     return {
       url: targets[command[1].toLowerCase()],
       title: `${command[1].toUpperCase()}: ${term}`,
-      external: true,
     };
   }
 
@@ -651,9 +608,8 @@ function resolveUrlInput(
     const term = input.slice(3).trim();
     if (!term) return null;
     return {
-      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(term)}`,
+      url: `orbit-yt-search:${term}`,
       title: `YouTube: ${term}`,
-      external: true,
     };
   }
 
@@ -664,8 +620,6 @@ function resolveUrlInput(
     const url = /^https?:\/\//i.test(input) ? input : `https://${input}`;
     // TAREFA 1 — domínio que bloqueia iframe (google, instagram, ML…) → abre
     // DIRETO em nova aba do sistema: o usuário nunca vê cadeado para sites comuns
-    if (isBlockedFrame(url))
-      return { url, title: domainOf(url), external: true };
     return { url, title: domainOf(url) };
   }
 
@@ -673,7 +627,6 @@ function resolveUrlInput(
   return {
     url: `https://www.google.com/search?q=${encodeURIComponent(input)}`,
     title: `Busca: ${input}`,
-    external: true,
   };
 }
 
@@ -1589,6 +1542,7 @@ export default function BrowserShell() {
   const [showFavForm, setShowFavForm] = useState(false);
   const [favName, setFavName] = useState("");
   const [favUrl, setFavUrl] = useState("");
+  const [editingFavoriteUrl, setEditingFavoriteUrl] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState({
     homepage: "home",
@@ -1604,7 +1558,7 @@ export default function BrowserShell() {
     try {
       const rawTabs = localStorage.getItem("orbit_tabs");
       if (rawTabs) {
-        const parsed = JSON.parse(rawTabs) as Tab[];
+        const parsed = normalizeTabs(JSON.parse(rawTabs) as unknown);
         if (Array.isArray(parsed) && parsed.length > 0) {
           // A aba Orbit é fixa: reinsere se ausente
           const withOrbit = parsed.some((t) => t.id === ORBIT_TAB_ID)
@@ -1618,14 +1572,16 @@ export default function BrowserShell() {
                 ...parsed,
               ];
           setTabs(withOrbit);
+          const savedActiveId = localStorage.getItem(ACTIVE_TAB_KEY);
+          setActiveId(
+            typeof savedActiveId === "string" && withOrbit.some((tab) => tab.id === savedActiveId)
+              ? savedActiveId
+              : withOrbit[0].id,
+          );
         }
       }
-      const rawFavs = localStorage.getItem("orbit_favorites");
-      if (rawFavs) {
-        const parsedFavs = JSON.parse(rawFavs) as Favorite[];
-        if (Array.isArray(parsedFavs) && parsedFavs.length > 0)
-          setFavorites(parsedFavs);
-      }
+      const savedFavorites = readFavorites();
+      if (savedFavorites.length > 0) setFavorites(savedFavorites);
     } catch {
       // storage corrompido → segue com os padrões
     }
@@ -1639,17 +1595,22 @@ export default function BrowserShell() {
       // Abas fantasma jamais são persistidas
       localStorage.setItem(
         "orbit_tabs",
-        JSON.stringify(tabs.filter((t) => !t.ghost)),
+        JSON.stringify(normalizeTabs(tabs.filter((t) => !t.ghost))),
       );
     } catch {}
   }, [tabs]);
 
+  useEffect(() => {
+    if (!hydrated.current || !tabs.some((tab) => tab.id === activeId)) return;
+    try {
+      localStorage.setItem(ACTIVE_TAB_KEY, activeId);
+    } catch {}
+  }, [activeId, tabs]);
+
   // Persiste os favoritos
   useEffect(() => {
     if (!hydrated.current) return;
-    try {
-      localStorage.setItem("orbit_favorites", JSON.stringify(favorites));
-    } catch {}
+    writeFavorites(favorites);
   }, [favorites]);
 
   // TAREFA 12/18 — carrega preferências locais (sidebar + histórico de URLs)
@@ -1701,6 +1662,11 @@ export default function BrowserShell() {
       if (mod && e.shiftKey && (e.key === "T" || e.key === "t")) {
         e.preventDefault();
         reopenClosedTab();
+        return;
+      }
+      if (mod && (e.key === "t" || e.key === "T")) {
+        e.preventDefault();
+        newTab();
         return;
       }
       if (mod && (e.key === "w" || e.key === "W")) {
@@ -2004,7 +1970,9 @@ export default function BrowserShell() {
     // TAREFA 1 — tracker → recusa; site que bloqueia iframe → abre em nova aba
     if (blockTracker(url)) return;
     if (isBlockedFrame(url)) {
-      openExternal(url, `${title || domainOf(url)} aberta em nova aba`);
+      // Preserve an Orbit tab and offer an explicit external-navigation
+      // fallback; do not attempt to bypass the site's frame policy.
+      openIframeTab(url, title);
       return;
     }
     // TAREFA 1/25 — whitelist e zona de confiança nunca alertam
@@ -2086,18 +2054,33 @@ export default function BrowserShell() {
   // MELHORIA 1 — adiciona favorito pelo formulário inline
   function addFavorite(e: React.FormEvent) {
     e.preventDefault();
-    const rawUrl = favUrl.trim();
-    if (!rawUrl) return;
-    const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+    const url = normalizeFavoriteUrl(favUrl);
+    if (!url) {
+      setToast("URL de favorito inválida.");
+      return;
+    }
     const title = favName.trim() || domainOf(url);
-    setFavorites((fs) =>
-      fs.some((f) => f.url === url)
-        ? fs
-        : [...fs, { title, url, folder: "Geral" }],
-    );
+    setFavorites((fs) => {
+      const duplicate = fs.some((f) => f.url === url && f.url !== editingFavoriteUrl);
+      if (duplicate) {
+        setToast("Esse favorito já existe.");
+        return fs;
+      }
+      return editingFavoriteUrl
+        ? fs.map((f) => f.url === editingFavoriteUrl ? { ...f, title, url } : f)
+        : [...fs, { title, url, folder: "Geral" }];
+    });
     setFavName("");
     setFavUrl("");
+    setEditingFavoriteUrl(null);
     setShowFavForm(false);
+  }
+
+  function editFavorite(favorite: Favorite) {
+    setFavName(favorite.title);
+    setFavUrl(favorite.url);
+    setEditingFavoriteUrl(favorite.url);
+    setShowFavForm(true);
   }
 
   // MELHORIA 1 — remove favorito com confirmação
@@ -2656,6 +2639,7 @@ export default function BrowserShell() {
               <img
                 src={faviconFor(f.url)}
                 alt=""
+                onError={(event) => { event.currentTarget.src = "/icon.svg"; }}
                 className="h-4 w-4 rounded-sm"
               />
               <span>{f.title}</span>
@@ -2669,11 +2653,25 @@ export default function BrowserShell() {
             >
               ✕
             </button>
+            <button
+              type="button"
+              onClick={() => editFavorite(f)}
+              aria-label={`Editar ${f.title}`}
+              title={`Editar ${f.title}`}
+              className="absolute -right-1 bottom-0 hidden h-4 w-4 items-center justify-center rounded-full bg-zinc-400 text-[9px] leading-none text-white transition hover:bg-zinc-600 group-hover:flex dark:bg-zinc-600"
+            >
+              Editar
+            </button>
           </div>
         ))}
         <button
           type="button"
-          onClick={() => setShowFavForm((s) => !s)}
+          onClick={() => {
+            setShowFavForm((s) => !s);
+            setEditingFavoriteUrl(null);
+            setFavName("");
+            setFavUrl("");
+          }}
           aria-label="Adicionar favorito"
           title="Adicionar favorito"
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-base leading-none text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/[0.06] dark:hover:text-white"
@@ -2705,11 +2703,11 @@ export default function BrowserShell() {
             type="submit"
             className="h-8 rounded-lg bg-zinc-900 px-4 text-[13px] font-semibold text-white transition hover:bg-zinc-700 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
-            Adicionar
+            {editingFavoriteUrl ? "Salvar" : "Adicionar"}
           </button>
           <button
             type="button"
-            onClick={() => setShowFavForm(false)}
+            onClick={() => { setShowFavForm(false); setEditingFavoriteUrl(null); }}
             className="h-8 rounded-lg px-3 text-[13px] text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-white"
           >
             Cancelar
@@ -2730,6 +2728,15 @@ export default function BrowserShell() {
                   : "border-transparent text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/[0.04]"
               }`}
             >
+              {t.url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={faviconFor(t.url)}
+                  alt=""
+                  onError={(event) => { event.currentTarget.src = "/icon.svg"; }}
+                  className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => setActiveId(t.id)}
