@@ -695,6 +695,22 @@ function DynamicBackgroundLegacy({
   );
 }
 
+function isBackgroundImageUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return /^https?:$/.test(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
+function nextBackgroundIndex(length: number, currentIndex: number): number {
+  if (length <= 1) return 0;
+  if (currentIndex < 0 || currentIndex >= length)
+    return Math.floor(Math.random() * length);
+  return (currentIndex + 1 + Math.floor(Math.random() * (length - 1))) % length;
+}
+
 function DynamicBackground({
   mode = "cosmos",
   ghost = false,
@@ -718,11 +734,19 @@ function DynamicBackground({
   useEffect(() => {
     if (isSimple || ghost) return;
     let cancelled = false;
-    fetch("/api/pixabay")
-      .then((response) => response.json())
-      .then((data: { enabled?: boolean; images?: string[] }) => {
-        if (!cancelled && data.enabled && data.images?.length)
-          setImages(data.images);
+    fetch("/api/pixabay", { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Pixabay indisponível");
+        return (await response.json()) as { enabled?: boolean; images?: unknown };
+      })
+      .then((data) => {
+        const validImages = Array.isArray(data.images)
+          ? data.images.filter(isBackgroundImageUrl)
+          : [];
+        if (!cancelled && data.enabled && validImages.length) {
+          setImageFailed(false);
+          setImages(validImages);
+        }
       })
       .catch(() => {
         // O canvas continua sendo o fundo principal quando a API falha.
@@ -734,23 +758,29 @@ function DynamicBackground({
 
   useEffect(() => {
     if (!images.length || isSimple || ghost) return;
+    let cancelled = false;
     let sessionIndex = -1;
     try {
       const saved = sessionStorage.getItem("orbit_pixabay_index");
       sessionIndex = saved ? Number.parseInt(saved, 10) : -1;
     } catch {}
-    const nextIndex =
+    const previousIndex =
       Number.isInteger(sessionIndex) && sessionIndex >= 0
         ? sessionIndex % images.length
-        : Math.floor(Math.random() * images.length);
+        : -1;
+    const nextIndex = nextBackgroundIndex(images.length, previousIndex);
     imageIndexRef.current = nextIndex;
-    try {
-      sessionStorage.setItem("orbit_pixabay_index", String(nextIndex));
-    } catch {}
 
-    function preloadAndShow(url: string) {
+    function preloadAndShow(index: number, attempted = new Set<number>()) {
+      const url = images[index];
+      if (!url || attempted.has(index)) {
+        setImageFailed(true);
+        return;
+      }
+      attempted.add(index);
       const image = new Image();
       image.onload = () => {
+        if (cancelled) return;
         const hiddenSlot: 0 | 1 = imageSlotRef.current === 0 ? 1 : 0;
         setImageSlots((current) => {
           const next: [string | null, string | null] = [current[0], current[1]];
@@ -759,20 +789,33 @@ function DynamicBackground({
         });
         imageSlotRef.current = hiddenSlot;
         setVisibleSlot(hiddenSlot);
+        setImageFailed(false);
+        imageIndexRef.current = index;
+        try {
+          sessionStorage.setItem("orbit_pixabay_index", String(index));
+        } catch {}
       };
-      image.onerror = () => setImageFailed(true);
+      image.onerror = () => {
+        const fallbackIndex = images.findIndex(
+          (_, candidate) => !attempted.has(candidate),
+        );
+        if (fallbackIndex >= 0) preloadAndShow(fallbackIndex, attempted);
+        else setImageFailed(true);
+      };
       image.src = url;
     }
 
-    preloadAndShow(images[nextIndex]);
+    preloadAndShow(nextIndex);
     const timer = window.setInterval(
       () => {
-        imageIndexRef.current = (imageIndexRef.current + 1) % images.length;
-        preloadAndShow(images[imageIndexRef.current]);
+        preloadAndShow(nextBackgroundIndex(images.length, imageIndexRef.current));
       },
       10 * 60 * 1000,
     );
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [ghost, images, isSimple]);
 
   const showPhoto =
@@ -780,8 +823,8 @@ function DynamicBackground({
   const overlay = ghost
     ? "bg-black/95"
     : isLight
-      ? "bg-gradient-to-b from-white/55 via-white/45 to-white/65"
-      : "bg-gradient-to-b from-black/65 via-black/60 to-black/80";
+      ? "bg-gradient-to-b from-white/35 via-white/30 to-white/50"
+      : "bg-gradient-to-b from-black/48 via-black/45 to-black/65";
 
   return (
     <div
@@ -799,8 +842,8 @@ function DynamicBackground({
               key={`${url}-${index}`}
               className="absolute inset-0 bg-cover bg-center opacity-0 transition-opacity duration-[1800ms]"
               style={{
-                backgroundImage: `url("${url}")`,
-                opacity: visibleSlot === index ? (isLight ? 0.24 : 0.3) : 0,
+                backgroundImage: `url(${JSON.stringify(url)})`,
+                opacity: visibleSlot === index ? (isLight ? 0.42 : 0.52) : 0,
               }}
             />
           ) : null,

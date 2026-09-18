@@ -7,9 +7,23 @@ const SEARCH_QUERY = "galaxy stars nebula night";
 
 let cache: { images: string[]; expiresAt: number } | null = null;
 
+function isHttpImageUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return /^https?:$/.test(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}
+
 export async function GET() {
   const apiKey = process.env.PIXABAY_API_KEY;
-  if (!apiKey) return NextResponse.json({ enabled: false });
+  if (!apiKey) {
+    return NextResponse.json(
+      { enabled: false },
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  }
 
   if (cache && cache.expiresAt > Date.now()) {
     return NextResponse.json({ enabled: true, images: cache.images });
@@ -38,13 +52,14 @@ export async function GET() {
     };
     const images = (data.hits ?? [])
       .map((hit) => hit.largeImageURL)
-      .filter(
-        (url): url is string => typeof url === "string" && url.length > 0,
-      );
+      .filter(isHttpImageUrl);
 
     if (!images.length) throw new Error("Pixabay não retornou imagens");
     cache = { images, expiresAt: Date.now() + CACHE_TTL };
-    return NextResponse.json({ enabled: true, images });
+    return NextResponse.json(
+      { enabled: true, images },
+      { headers: { "Cache-Control": "private, max-age=300" } },
+    );
   } catch (error) {
     console.error("Pixabay background error:", error);
     return NextResponse.json(
@@ -52,7 +67,7 @@ export async function GET() {
         enabled: false,
         error: "Não foi possível carregar imagens do Pixabay agora.",
       },
-      { status: 502 },
+      { status: 502, headers: { "Cache-Control": "no-store" } },
     );
   }
 }
