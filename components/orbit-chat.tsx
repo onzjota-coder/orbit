@@ -21,6 +21,34 @@ const HISTORY_MAX = 50;
 
 type Msg = Message;
 
+function renderMessageText(text: string) {
+  const trimmed = text.trim();
+  const linkedImage = trimmed.match(
+    /^\[!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)\]\((https?:\/\/[^\s)]+)\)$/i,
+  );
+  const image = trimmed.match(
+    /^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)$/i,
+  );
+  const match = linkedImage ?? image;
+
+  if (!match) return text;
+
+  const alt = match[1] || "Imagem gerada";
+  const source = match[2];
+  const href = linkedImage?.[3] ?? source;
+
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={source}
+        alt={alt}
+        className="max-w-[280px] cursor-pointer rounded-2xl border border-zinc-200 transition hover:opacity-90 dark:border-white/10"
+      />
+    </a>
+  );
+}
+
 // Boas-vindas como constante estável: usada para NÃO enviar a saudação
 // como histórico da IA nem reexibi-la quando há conversa salva.
 const WELCOME: Msg = {
@@ -1042,7 +1070,7 @@ export default function OrbitChat({
 
     // ── FLUXO 0: geração de imagem por TEXTO ("faça/gere/crie/desenhe uma imagem/foto de X") ──
     const imgCmd = text.match(
-      /^(fa[çc]a|gere|crie|desenhe)\s+(uma\s+|um\s+)?(imagem|foto)\s+/i,
+      /^(?:(?:fa[çc]a|gere|crie|desenhe)\s+(?:uma\s+|um\s+)?(?:imagem|foto)|(?:(?:me\s+)?(?:envie|envia|mande|manda|mostre|mostra)|(?:pode\s+)?(?:me\s+)?(?:enviar|mandar|mostrar))\s+(?:uma\s+|um\s+)?(?:imagem|foto))(?:\s+(?:de|do|da|sobre|com))?\s+/i,
     );
     const directProductCmd =
       /^(quero|preciso|me mostre|mostre|crie|fa[çc]a)\s+(uma?\s+)?(camiseta|camisa|tenis|t[êe]nis|bone|b[óo]ne|colar|anel|brinco|capacete|cal[çc]a|shorts|moletom|vestido|saia|bolsa|mochila|relogio|rel[óo]gio|fone|celular|notebook)/i.test(
@@ -1050,13 +1078,7 @@ export default function OrbitChat({
       );
     if ((imgCmd || directProductCmd) && !image) {
       const theme = imgCmd
-        ? text
-            .replace(/^(fa[çc]a|gere|crie|desenhe)\s+/i, "")
-            .replace(/^(uma|um|o|a)\s+/i, "")
-            .replace(/^(imagem|foto)\s+/i, "")
-            .replace(/^(de|do|da|sobre|com)\s+/i, "")
-            .replace(/^(uma|um|o|a)\s+/i, "")
-            .trim() || "algo surpreendente"
+        ? text.slice(imgCmd[0].length).trim() || "algo surpreendente"
         : text;
       setMessages((m) => [...m, { role: "user", text }]);
       setInput("");
@@ -1687,7 +1709,7 @@ export default function OrbitChat({
                   )}
                   {m.text && (
                     <div className="whitespace-pre-wrap text-[13.5px] leading-relaxed text-zinc-700 dark:text-zinc-300">
-                      {m.text}
+                      {renderMessageText(m.text)}
                     </div>
                   )}
                   {m.retry && (
