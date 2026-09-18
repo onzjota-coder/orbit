@@ -865,12 +865,13 @@ export default function OrbitChat({
       setInput("");
       setLoading(true);
       try {
-        const [openRouterResponse, imageProvidersResponse] = await Promise.all([
-          fetch("/api/status/openrouter"),
+        const [aiStatusResponse, imageProvidersResponse] = await Promise.all([
+          fetch("/api/status/ai"),
           fetch("/api/image/providers"),
         ]);
-        const openRouterData = (await openRouterResponse.json()) as {
-          connected?: boolean;
+        const aiStatusData = (await aiStatusResponse.json()) as {
+          gemini?: { configured?: boolean };
+          openrouter?: { configured?: boolean };
         };
         const imageProvidersData = (await imageProvidersResponse.json()) as {
           providers?: { id?: string; configured?: boolean }[];
@@ -882,7 +883,7 @@ export default function OrbitChat({
           ...m,
           {
             role: "orbit",
-            text: `🤖 IAs conectadas:\n\nGemini ✅\nOpenRouter ${openRouterData.connected ? "✅ conectado" : "⚪ não configurado"}\nPollinations ✅\nGPT-Image ${openAi?.configured ? "✅" : "⚪ não configurado"}\n\n🧠 Dica: abra o Hub de Inteligências para explorar os modelos disponíveis.`,
+            text: `🤖 IAs conectadas:\n\nGemini ${aiStatusData.gemini?.configured ? "✅ conectado" : "⚪ não configurado"}\nOpenRouter ${aiStatusData.openrouter?.configured ? "✅ conectado" : "⚪ não configurado"}\nPollinations ✅\nGPT-Image ${openAi?.configured ? "✅" : "⚪ não configurado"}\n\n🧠 Dica: abra o Hub de Inteligências para explorar os modelos disponíveis.`,
           },
         ]);
       } catch {
@@ -890,7 +891,7 @@ export default function OrbitChat({
           ...m,
           {
             role: "orbit",
-            text: "🤖 Gemini ✅ · Pollinations ✅ · Não foi possível consultar os status opcionais agora.\n\n🧠 Abra o Hub de Inteligências para explorar os modelos disponíveis.",
+            text: "🤖 Não foi possível consultar os status das IAs agora. Pollinations continua disponível.\n\n🧠 Abra o Hub de Inteligências para explorar os modelos disponíveis.",
           },
         ]);
       } finally {

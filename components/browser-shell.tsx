@@ -2309,7 +2309,7 @@ export default function BrowserShell() {
 
   if (splash) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-black">
+      <div className="flex h-dvh w-full items-center justify-center bg-black">
         <div className="animate-spin">
           <Logo size={42} />
         </div>
@@ -2318,7 +2318,7 @@ export default function BrowserShell() {
   }
 
   return (
-    <section className="flex h-screen w-full flex-col overflow-hidden border-y border-zinc-200 bg-white dark:border-white/10 dark:bg-[#0E0E11]">
+    <section className="flex h-dvh w-full flex-col overflow-hidden border-y border-zinc-200 bg-white dark:border-white/10 dark:bg-[#0E0E11]">
       {/* Barra superior estilo navegador */}
       <div className="flex items-center gap-1.5 border-b border-white/[0.12] bg-black px-3 py-2 text-white">
         <button
