@@ -131,6 +131,9 @@ export default function IntelligenceHub({
   const [openrouterConnected, setOpenrouterConnected] = useState<
     boolean | null
   >(null);
+  // Estado fino vindo de /api/status/openrouter:
+  // "nao_configurado" | "configurado_nao_validado" | "rejeitado" | "operacional"
+  const [openrouterState, setOpenrouterState] = useState<string>("");
 
   useEffect(() => {
     try {
@@ -166,9 +169,10 @@ export default function IntelligenceHub({
   useEffect(() => {
     fetch("/api/status/openrouter")
       .then((response) => response.json())
-      .then((data: { connected?: boolean }) =>
-        setOpenrouterConnected(data.connected === true),
-      )
+      .then((data: { connected?: boolean; state?: string }) => {
+        setOpenrouterConnected(data.connected === true);
+        setOpenrouterState(typeof data.state === "string" ? data.state : "");
+      })
       .catch(() => setOpenrouterConnected(false));
   }, []);
 
@@ -359,6 +363,28 @@ export default function IntelligenceHub({
             <p className="mt-1 flex-1 text-[12.5px] leading-relaxed text-zinc-500 dark:text-zinc-400">
               {openrouterConnected === true ? (
                 "OpenRouter conectado. Os modelos disponíveis aparecem no seletor do chat."
+              ) : openrouterState === "configurado_nao_validado" ? (
+                <>
+                  Chave presente no servidor, mas ainda não validada pela API
+                  do OpenRouter. Se o chat falhar, troque a{" "}
+                  <code className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-white/10">
+                    OPENROUTER_API_KEY
+                  </code>
+                  .
+                </>
+              ) : openrouterState === "rejeitado" ? (
+                <>
+                  A API do OpenRouter recusou a chave configurada. Gere uma nova
+                  e atualize a{" "}
+                  <code className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-white/10">
+                    OPENROUTER_API_KEY
+                  </code>{" "}
+                  no{" "}
+                  <code className="rounded bg-zinc-100 px-1 py-0.5 text-[11px] dark:bg-white/10">
+                    .env
+                  </code>
+                  .
+                </>
               ) : (
                 <>
                   Adicione{" "}
